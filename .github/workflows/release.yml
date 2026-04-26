@@ -1,0 +1,191 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 发布版本号，需包含 v 前缀，例如 v0.1.1
+        required: true
+        type: string
+      git_ref:
+        description: 要构建的分支、tag 或 commit，默认 master
+        required: false
+        default: master
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: 构建 ${{ matrix.target_name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target_name: linux-musl-amd64
+            goos: linux
+            goarch: amd64
+            artifact_name: release-linux-musl-amd64
+            binary_name: sshm
+          - runner: windows-latest
+            target_name: windows-amd64
+            goos: windows
+            goarch: amd64
+            artifact_name: release-windows-amd64
+            binary_name: sshm.exe
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 安装 Linux musl 构建依赖
+        if: matrix.goos == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential musl-tools
+
+      - name: 安装 Windows 构建依赖
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          msystem: MINGW64
+          install: mingw-w64-x86_64-gcc zip
+          path-type: inherit
+
+      - name: 输出 Linux 环境信息
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          go version
+          gcc --version
+          musl-gcc --version
+
+      - name: 输出 Windows 环境信息
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          go version
+          gcc --version
+
+      - name: 运行 Linux 测试
+        if: matrix.goos == 'linux'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+          CC: musl-gcc
+        run: go test ./...
+
+      - name: 运行 Windows 测试
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        env:
+          CGO_ENABLED: "1"
+        run: go test ./...
+
+      - name: 构建 Linux musl 二进制
+        if: matrix.goos == 'linux'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: linux
+          GOARCH: amd64
+          CC: musl-gcc
+        run: |
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -tags 'osusergo,netgo' \
+            -ldflags '-linkmode external -extldflags "-static" -X sshm/internal/buildinfo.Version=${{ inputs.version }}' \
+            -o "dist/${{ matrix.binary_name }}" .
+
+      - name: 构建 Windows 二进制
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        env:
+          CGO_ENABLED: "1"
+          GOOS: windows
+          GOARCH: amd64
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          $binaryPath = Join-Path "dist" "${{ matrix.binary_name }}"
+          go build -trimpath -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" -o $binaryPath .
+
+      - name: 打包 Linux musl 产物
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          archive="sshm_${{ inputs.version }}_linux_musl_amd64.tar.gz"
+          tar -C dist -czf "dist/${archive}" sshm
+
+      - name: 打包 Windows 产物
+        if: matrix.goos == 'windows'
+        shell: pwsh
+        run: |
+          $archive = "sshm_${{ inputs.version }}_windows_amd64.zip"
+          Compress-Archive -Path dist/sshm.exe -DestinationPath "dist/$archive" -Force
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  release:
+    name: 发布 GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: 下载构建产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+
+      - name: 展示产物列表
+        shell: bash
+        run: find release-dist -type f | sort
+
+      - name: 创建或更新 Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version='${{ inputs.version }}'
+          target_commit="$(git rev-parse HEAD)"
+          shopt -s nullglob globstar
+          files=(release-dist/**/*.tar.gz release-dist/**/*.zip)
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "未找到可发布的打包文件"
+            exit 1
+          fi
+
+          if gh release view "$version" >/dev/null 2>&1; then
+            gh release upload "$version" "${files[@]}" --clobber
+          else
+            gh release create "$version" "${files[@]}" \
+              --target "$target_commit" \
+              --title "$version" \
+              --generate-notes
+          fi
