@@ -2,7 +2,8 @@
 
 `sshm` 是一个基于 Go 与 Bubble Tea 的终端 SSH 工作台，用于集中管理 SSH 连接、打开远端 Shell，并在本地与远端之间传输文件。
 
-![sshm screenshot](image.png)
+![sshm screenshot](image/main.png)
+![sshm screenshot](image/scp.png)
 
 ## 特性
 

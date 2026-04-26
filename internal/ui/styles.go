@@ -79,8 +79,8 @@ func newDefaultTheme() Theme {
 		Text:                        lipgloss.Color("252"),
 		SubtleText:                  lipgloss.Color("250"),
 		MutedText:                   lipgloss.Color("244"),
-		HelpText:                    lipgloss.Color("247"),
-		ShortcutLabel:               lipgloss.Color("243"),
+		HelpText:                    lipgloss.Color("246"),
+		ShortcutLabel:               lipgloss.Color("250"),
 		Error:                       lipgloss.Color("203"),
 		Success:                     lipgloss.Color("42"),
 		Warning:                     lipgloss.Color("221"),
@@ -92,8 +92,8 @@ func newDefaultTheme() Theme {
 		FieldLabelFocused:           lipgloss.Color("229"),
 		GroupScope:                  lipgloss.Color("213"),
 		SearchHighlight:             lipgloss.Color("220"),
-		KeyText:                     lipgloss.Color("252"),
-		KeyBackground:               lipgloss.Color("101"),
+		KeyText:                     lipgloss.Color("81"),
+		KeyBackground:               lipgloss.Color("237"),
 	}
 	return newTheme(palette)
 }
@@ -173,6 +173,7 @@ func newTheme(palette ThemePalette) Theme {
 			Foreground(palette.FieldLabelFocused),
 
 		Keycap: lipgloss.NewStyle().
+			Bold(true).
 			Foreground(palette.KeyText).
 			Background(palette.KeyBackground).
 			Padding(0, 1),

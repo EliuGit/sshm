@@ -151,6 +151,7 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) viewGroupPanel() string {
 	styles := m.theme.Styles
+	const tableWidth = 36
 	title := m.translator.T("group.filter_title")
 	desc := m.translator.T("group.filter_desc")
 	if m.groups.mode == groupPanelMove {
@@ -161,15 +162,19 @@ func (m *Model) viewGroupPanel() string {
 	if len(m.groups.items) == 0 {
 		lines = append(lines, styles.SubtleText.Render(m.translator.T("group.empty")))
 	} else {
+		lines = append(lines,
+			styles.SubtleText.Render(m.renderGroupTableHeader(tableWidth)),
+			styles.MutedText.Render(strings.Repeat("─", tableWidth)),
+		)
 		for index, item := range m.groups.items {
-			row := m.renderGroupRow(item, 34)
+			row := m.renderGroupRow(item, tableWidth)
 			style := styles.Text
 			if index == m.groups.selected {
-				style = styles.Selection.Copy().Width(34)
+				style = styles.Selection.Copy().Width(tableWidth)
 			} else {
-				style = styles.Text.Copy().Width(34)
+				style = styles.Text.Copy().Width(tableWidth)
 			}
-			lines = append(lines, style.Render(truncate(row, 34)))
+			lines = append(lines, style.Render(row))
 		}
 	}
 	if m.groups.inputMode != groupInputNone {
@@ -184,25 +189,25 @@ func (m *Model) viewGroupPanel() string {
 			styles.PageTitle.Render(m.translator.T("group.delete_title")),
 			styles.SubtleText.Render(m.translator.T("group.delete_desc", m.selectedGroupName())),
 			"",
-			localizedShortcutHelpWidth(m.translator, m.theme, 34,
+			localizedShortcutHelpWidth(m.translator, m.theme, tableWidth,
 				"enter/y", "group.shortcut_confirm",
 				"n", "group.shortcut_cancel",
 				"q", "group.shortcut_close",
 			),
 		)
-		return styles.Dialog.Width(42).Render(strings.Join(lines, "\n"))
+		return styles.Dialog.Width(44).Render(strings.Join(lines, "\n"))
 	}
 	if m.groups.errorValue != "" {
 		lines = append(lines, "", styles.ErrorText.Render(m.groups.errorValue))
 	}
-	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.theme, 34,
+	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.theme, tableWidth,
 		"enter", "group.shortcut_choose",
 		"a", "group.shortcut_create",
 		"r", "group.shortcut_rename",
 		"d", "group.shortcut_delete",
 		"q", "group.shortcut_close",
 	))
-	return styles.Dialog.Width(42).Render(strings.Join(lines, "\n"))
+	return styles.Dialog.Width(44).Render(strings.Join(lines, "\n"))
 }
 
 func (m *Model) selectedGroupName() string {
@@ -222,11 +227,31 @@ func (m *Model) renderGroupRow(item domain.ConnectionGroupListItem, width int) s
 		name = m.translator.T("group.ungrouped")
 	}
 	count := fmt.Sprintf("%d", item.ConnectionCount)
-	gap := max(1, width-lipgloss.Width(name)-lipgloss.Width(count))
-	if gap == 1 && lipgloss.Width(name)+lipgloss.Width(count)+gap > width {
-		name = truncate(name, max(1, width-lipgloss.Width(count)-gap))
-	}
-	return name + strings.Repeat(" ", gap) + count
+	return m.renderGroupTableRow(name, count, width)
+}
+
+func (m *Model) renderGroupTableHeader(width int) string {
+	return m.renderGroupTableRow(
+		m.translator.T("group.column_name"),
+		m.translator.T("group.column_count"),
+		width,
+	)
+}
+
+func (m *Model) renderGroupTableRow(name string, count string, width int) string {
+	countWidth := max(5, lipgloss.Width(m.translator.T("group.column_count")))
+	nameWidth := max(8, width-countWidth-2)
+	return padRight(truncate(name, nameWidth), nameWidth) + "  " + padLeft(truncate(count, countWidth), countWidth)
+}
+
+func padRight(value string, width int) string {
+	gap := max(0, width-lipgloss.Width(value))
+	return value + strings.Repeat(" ", gap)
+}
+
+func padLeft(value string, width int) string {
+	gap := max(0, width-lipgloss.Width(value))
+	return strings.Repeat(" ", gap) + value
 }
 
 func (m *Model) selectedGroup() *domain.ConnectionGroupListItem {

@@ -660,6 +660,9 @@ func TestGroupPanelTitleShowsCurrentMode(t *testing.T) {
 	if !strings.Contains(filterView, "选择组") || !strings.Contains(filterView, "当前：选择分组以过滤主列表") {
 		t.Fatalf("filter group panel = %q, want filter mode title and desc", filterView)
 	}
+	if !strings.Contains(filterView, "分组") || !strings.Contains(filterView, "连接数") {
+		t.Fatalf("filter group panel = %q, want table headers", filterView)
+	}
 
 	model.groups.mode = groupPanelMove
 	moveView := model.viewGroupPanel()
