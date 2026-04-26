@@ -3,8 +3,8 @@ package i18n
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"sshm/internal/domain"
+	"strings"
 )
 
 type Translator struct {
@@ -120,6 +120,8 @@ var english = map[string]string{
 	"status.search_cleared":              "Search cleared",
 	"status.filtered_connections":        "Filtered to %d connection(s)",
 	"status.type_to_filter":              "Type to filter connections",
+	"status.connecting_shell":            "Connecting to %s...",
+	"status.connecting_browser":          "Connecting to %s for file workspace...",
 	"status.loading_browser":             "Loading file browser...",
 	"status.browser_ready":               "File browser ready",
 	"status.connection_deleted":          "Connection deleted",
@@ -140,6 +142,8 @@ var english = map[string]string{
 	"status.group_deleted":               "Group deleted",
 	"status.connection_moved_group":      "Moved to %s",
 	"status.import_done":                 "Import complete: %d created, %d updated, %d skipped",
+	"status.shell_connect_failed":        "Connection %s failed: %s",
+	"status.browser_connect_failed":      "File workspace for %s failed: %s",
 	"home.search_placeholder":            "Search name / host / user / description",
 	"home.search_prompt":                 "Search: ",
 	"home.title":                         "TUI SSH Manage",
@@ -364,6 +368,8 @@ var chinese = map[string]string{
 	"status.search_cleared":              "搜索已清空",
 	"status.filtered_connections":        "已过滤到 %d 个连接",
 	"status.type_to_filter":              "输入内容以过滤连接",
+	"status.connecting_shell":            "正在连接 %s...",
+	"status.connecting_browser":          "正在为 %s 连接文件工作区...",
 	"status.loading_browser":             "正在加载文件浏览器...",
 	"status.browser_ready":               "文件浏览器已就绪",
 	"status.connection_deleted":          "连接已删除",
@@ -384,6 +390,8 @@ var chinese = map[string]string{
 	"status.group_deleted":               "分组已删除",
 	"status.connection_moved_group":      "已移动到 %s",
 	"status.import_done":                 "导入完成：新增 %d，更新 %d，跳过 %d",
+	"status.shell_connect_failed":        "连接 %s 失败：%s",
+	"status.browser_connect_failed":      "连接 %s 的文件工作区失败：%s",
 	"home.search_placeholder":            "搜索名称 / 主机 / 用户 / 描述",
 	"home.search_prompt":                 "搜索：",
 	"home.title":                         "TUI SSH 管理器",

@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"errors"
+	"sshm/internal/app"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
 	"strings"
@@ -9,6 +11,29 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+type closeTrackingSession struct {
+	closed bool
+}
+
+func (s *closeTrackingSession) OpenShell() error { return nil }
+func (s *closeTrackingSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (s *closeTrackingSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (s *closeTrackingSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (s *closeTrackingSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (s *closeTrackingSession) HomeDir() (string, error) { return "/", nil }
+func (s *closeTrackingSession) Close() error {
+	s.closed = true
+	return nil
+}
+
+var _ app.RemoteSession = (*closeTrackingSession)(nil)
 
 func TestBrowserEscClearsActiveFilter(t *testing.T) {
 	t.Parallel()
@@ -57,6 +82,87 @@ func TestBrowserQReturnsHome(t *testing.T) {
 	}
 	if got.status != translator.T("status.returned_connections") {
 		t.Fatalf("status = %q", got.status)
+	}
+}
+
+func TestBrowserQClosesRemoteSession(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	session := &closeTrackingSession{}
+	model.browser.session = session
+
+	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
+	got := updated.(*Model)
+	if !session.closed {
+		t.Fatal("session.closed = false, want true")
+	}
+	if got.browser.session != nil {
+		t.Fatalf("browser.session = %#v, want nil", got.browser.session)
+	}
+}
+
+func TestRemoteLoadedConnectionErrorReturnsHomeAndClosesSession(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	session := &closeTrackingSession{}
+	model.browser.session = session
+
+	updated, cmd := model.Update(remoteLoadedMsg{err: errors.New("broken pipe")})
+	got := updated.(*Model)
+	if got.page != pageHome {
+		t.Fatalf("page = %v, want %v", got.page, pageHome)
+	}
+	if !session.closed {
+		t.Fatal("session.closed = false, want true")
+	}
+	if got.browser.session != nil {
+		t.Fatalf("browser.session = %#v, want nil", got.browser.session)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want reload connections command")
+	}
+}
+
+func TestBrowserOpConnectionErrorReturnsHomeAndClosesSession(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	session := &closeTrackingSession{}
+	model.browser.session = session
+
+	updated, cmd := model.Update(opDoneMsg{err: errors.New("remote session is closed")})
+	got := updated.(*Model)
+	if got.page != pageHome {
+		t.Fatalf("page = %v, want %v", got.page, pageHome)
+	}
+	if !session.closed {
+		t.Fatal("session.closed = false, want true")
+	}
+	if got.browser.session != nil {
+		t.Fatalf("browser.session = %#v, want nil", got.browser.session)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want reload connections command")
 	}
 }
 

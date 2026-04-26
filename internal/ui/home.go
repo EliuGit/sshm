@@ -38,6 +38,13 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.overlay == overlayGroup {
 			return m.updateGroupPanel(keyMsg)
 		}
+		if m.connecting {
+			switch keyMsg.String() {
+			case "ctrl+c", "q":
+				return m, tea.Quit
+			}
+			return m, nil
+		}
 
 		if m.searchMode {
 			switch keyMsg.String() {
@@ -144,27 +151,12 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.ClearScreen
 		case "enter":
 			if conn := m.currentConnection(); conn != nil {
-				return m, func() tea.Msg {
-					return shellReadyMsg{connectionID: conn.ID}
-				}
+				return m.startHomeProbe(*conn, homeProbeShell)
 			}
 			return m, nil
 		case "ctrl+o":
 			if conn := m.currentConnection(); conn != nil {
-				m.page = pageBrowser
-				m.browser = newBrowserState(m.translator, m.theme)
-				m.browser.connectionID = conn.ID
-				m.browser.connection = *conn
-				m.browser.localPanel.path = m.startupDir
-				m.browser.remotePanel.path = "."
-				m.browser.activePanel = domain.LocalPanel
-				m.browser.localPanel.loading = true
-				m.browser.remotePanel.loading = true
-				return m, tea.Batch(
-					tea.ClearScreen,
-					m.loadLocalCmd(m.browser.localPanel.path, m.browser.localPanel.filter),
-					m.loadRemoteCmd(conn.ID, m.browser.remotePanel.path, m.browser.remotePanel.filter),
-				)
+				return m.startHomeProbe(*conn, homeProbeBrowser)
 			}
 			return m, nil
 		}
@@ -190,11 +182,13 @@ func (m *Model) viewHome() string {
 
 	header := m.viewHomeHeader()
 	search := m.viewHomeSearch(mainWidth)
+	status := m.renderStatus()
 	footer := m.viewHomeFooter(contentWidth)
 	chunks := []string{
 		header,
 		search,
 		body,
+		status,
 		footer,
 	}
 	view := strings.Join([]string{
@@ -204,6 +198,8 @@ func (m *Model) viewHome() string {
 		chunks[2],
 		"",
 		chunks[3],
+		"",
+		chunks[4],
 	}, "\n")
 	if m.overlay == overlayDelete {
 		dialog := styles.Dialog.Width(44).Render(strings.Join([]string{
@@ -381,6 +377,34 @@ func (m *Model) deleteConnectionCmd(id int64) tea.Cmd {
 			return opDoneMsg{err: err}
 		}
 		return opDoneMsg{status: m.translator.T("status.connection_deleted"), success: true, reloadConnections: true}
+	}
+}
+
+func (m *Model) startHomeProbe(conn Connection, action homeProbeAction) (tea.Model, tea.Cmd) {
+	m.connecting = true
+	m.setInfoStatus(m.homeProbePendingStatus(action, conn.Name))
+	return m, m.probeConnectionCmd(conn, action)
+}
+
+func (m *Model) homeProbePendingStatus(action homeProbeAction, connectionName string) string {
+	switch action {
+	case homeProbeBrowser:
+		return m.translator.T("status.connecting_browser", connectionName)
+	default:
+		return m.translator.T("status.connecting_shell", connectionName)
+	}
+}
+
+func (m *Model) probeConnectionCmd(conn Connection, action homeProbeAction) tea.Cmd {
+	return func() tea.Msg {
+		session, err := m.services.Sessions.OpenSession(conn.ID)
+		return homeProbeDoneMsg{
+			action:         action,
+			connectionName: conn.Name,
+			connection:     conn,
+			session:        session,
+			err:            err,
+		}
 	}
 }
 

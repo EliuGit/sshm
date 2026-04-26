@@ -28,7 +28,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return m, m.loadLocalCmd(m.browser.localPanel.path, value)
 					}
 					m.browser.remotePanel.filter = value
-					return m, m.loadRemoteCmd(m.browser.connectionID, m.browser.remotePanel.path, value)
+					return m, m.loadRemoteCmd(m.browser.remotePanel.path, value)
 				}
 				if value == "" {
 					return m, nil
@@ -36,7 +36,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.browser.activePanel == domain.LocalPanel {
 					return m, m.loadLocalCmd(value, m.browser.localPanel.filter)
 				}
-				return m, m.loadRemoteCmd(m.browser.connectionID, value, m.browser.remotePanel.filter)
+				return m, m.loadRemoteCmd(value, m.browser.remotePanel.filter)
 			default:
 				var cmd tea.Cmd
 				m.browser.input, cmd = m.browser.input.Update(msg)
@@ -90,6 +90,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		switch keyMsg.String() {
 		case "q":
+			m.closeBrowserSession()
 			m.page = pageHome
 			m.overlay = overlayNone
 			m.setInfoStatus(m.translator.T("status.returned_connections"))
@@ -138,7 +139,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if m.browser.activePanel == domain.LocalPanel {
 					return m, m.loadLocalCmd(row.Path, m.browser.localPanel.filter)
 				}
-				return m, m.loadRemoteCmd(m.browser.connectionID, row.Path, m.browser.remotePanel.filter)
+				return m, m.loadRemoteCmd(row.Path, m.browser.remotePanel.filter)
 			}
 		case "backspace", "left", "h":
 			panel := m.activeBrowserPanel()
@@ -149,7 +150,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if m.browser.activePanel == domain.LocalPanel {
 				return m, m.loadLocalCmd(next, panel.filter)
 			}
-			return m, m.loadRemoteCmd(m.browser.connectionID, next, panel.filter)
+			return m, m.loadRemoteCmd(next, panel.filter)
 		case "u":
 			if m.browser.activePanel != domain.LocalPanel {
 				m.setInfoStatus(m.translator.T("status.focus_local_upload"))
@@ -161,7 +162,10 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			targetPath := joinRemotePath(m.browser.remotePanel.path, row.Name)
 			return m.prepareTransfer(m.translator.T("status.uploading"), row.Path, targetPath, domain.RemotePanel, func(progress func(domain.TransferProgress)) error {
-				return m.services.Files.Upload(m.browser.connectionID, row.Path, m.browser.remotePanel.path, progress)
+				if m.browser.session == nil {
+					return fmt.Errorf("browser session is not ready")
+				}
+				return m.browser.session.Upload(row.Path, m.browser.remotePanel.path, progress)
 			}, m.translator.T("status.uploaded", row.Name), row.Name)
 		case "d":
 			if m.browser.activePanel != domain.RemotePanel {
@@ -174,7 +178,10 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			targetPath := filepath.Join(m.browser.localPanel.path, row.Name)
 			return m.prepareTransfer(m.translator.T("status.downloading"), row.Path, targetPath, domain.LocalPanel, func(progress func(domain.TransferProgress)) error {
-				return m.services.Files.Download(m.browser.connectionID, row.Path, m.browser.localPanel.path, progress)
+				if m.browser.session == nil {
+					return fmt.Errorf("browser session is not ready")
+				}
+				return m.browser.session.Download(row.Path, m.browser.localPanel.path, progress)
 			}, m.translator.T("status.downloaded", row.Name), row.Name)
 		}
 	}
@@ -187,11 +194,18 @@ func (m *Model) prepareTransfer(action string, sourcePath string, targetPath str
 		err    error
 	)
 	if panel == domain.RemotePanel {
-		exists, err = m.services.Files.ExistsRemote(m.browser.connectionID, targetPath)
+		if m.browser.session == nil {
+			err = fmt.Errorf("browser session is not ready")
+		} else {
+			exists, err = m.browser.session.PathExists(targetPath)
+		}
 	} else {
 		exists, err = m.services.Files.ExistsLocal(targetPath)
 	}
 	if err != nil {
+		if isBrowserSessionError(err) {
+			return m.handleBrowserSessionFailure(err)
+		}
 		m.setErrorStatus(err)
 		return m, nil
 	}
@@ -420,7 +434,7 @@ func (m *Model) clearActiveBrowserFilter() tea.Cmd {
 	if m.browser.activePanel == domain.LocalPanel {
 		return m.loadLocalCmd(panel.path, "")
 	}
-	return m.loadRemoteCmd(m.browser.connectionID, panel.path, "")
+	return m.loadRemoteCmd(panel.path, "")
 }
 
 func (m *Model) loadLocalCmd(pathValue string, filter string) tea.Cmd {
@@ -432,11 +446,17 @@ func (m *Model) loadLocalCmd(pathValue string, filter string) tea.Cmd {
 	}
 }
 
-func (m *Model) loadRemoteCmd(connectionID int64, pathValue string, filter string) tea.Cmd {
+func (m *Model) loadRemoteCmd(pathValue string, filter string) tea.Cmd {
 	m.browser.remotePanel.loading = true
 	m.setInfoStatus(m.translator.T("status.loading_browser"))
 	return func() tea.Msg {
-		items, currentPath, err := m.services.Files.ListRemote(connectionID, pathValue, filter)
+		if m.browser.session == nil {
+			return remoteLoadedMsg{err: fmt.Errorf("browser session is not ready")}
+		}
+		items, currentPath, err := m.browser.session.ListRemote(pathValue)
+		if err == nil {
+			items = filterRemoteEntries(items, filter)
+		}
 		return remoteLoadedMsg{items: items, path: currentPath, err: err}
 	}
 }
@@ -444,7 +464,7 @@ func (m *Model) loadRemoteCmd(connectionID int64, pathValue string, filter strin
 func (m *Model) reloadBrowserCmd() tea.Cmd {
 	return tea.Batch(
 		m.loadLocalCmd(m.browser.localPanel.path, m.browser.localPanel.filter),
-		m.loadRemoteCmd(m.browser.connectionID, m.browser.remotePanel.path, m.browser.remotePanel.filter),
+		m.loadRemoteCmd(m.browser.remotePanel.path, m.browser.remotePanel.filter),
 	)
 }
 
@@ -459,7 +479,13 @@ func (m *Model) reloadBrowserSelectCmd(targetPanel domain.FilePanel, selectName 
 			return msg
 		},
 		func() tea.Msg {
-			items, currentPath, err := m.services.Files.ListRemote(m.browser.connectionID, m.browser.remotePanel.path, m.browser.remotePanel.filter)
+			if m.browser.session == nil {
+				return remoteLoadedMsg{err: fmt.Errorf("browser session is not ready")}
+			}
+			items, currentPath, err := m.browser.session.ListRemote(m.browser.remotePanel.path)
+			if err == nil {
+				items = filterRemoteEntries(items, m.browser.remotePanel.filter)
+			}
 			msg := remoteLoadedMsg{items: items, path: currentPath, err: err}
 			if targetPanel == domain.RemotePanel {
 				msg.selectName = selectName
@@ -490,6 +516,28 @@ func newBrowserState(translator *i18n.Translator, theme Theme) browserState {
 		activePanel: domain.LocalPanel,
 		input:       input,
 	}
+}
+
+func (m *Model) closeBrowserSession() {
+	if m.browser.session == nil {
+		return
+	}
+	_ = m.browser.session.Close()
+	m.browser.session = nil
+}
+
+func filterRemoteEntries(items []domain.FileEntry, filter string) []domain.FileEntry {
+	query := strings.ToLower(strings.TrimSpace(filter))
+	if query == "" {
+		return items
+	}
+	filtered := make([]domain.FileEntry, 0, len(items))
+	for _, entry := range items {
+		if strings.Contains(strings.ToLower(entry.Name), query) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func (m *Model) syncBrowserStatus() {

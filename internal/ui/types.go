@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sshm/internal/app"
 	"sshm/internal/domain"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -58,7 +59,7 @@ const (
 )
 
 type AppResult struct {
-	ShellConnectionID int64
+	ShellSession app.RemoteSession
 }
 
 type formState struct {
@@ -103,6 +104,7 @@ type importState struct {
 type browserState struct {
 	connectionID int64
 	connection   domain.Connection
+	session      app.RemoteSession
 
 	localPanel  filePanel
 	remotePanel filePanel

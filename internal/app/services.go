@@ -6,13 +6,27 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sshm/internal/domain"
 	"sshm/internal/security"
 	"sshm/internal/store/sqlite"
+	"strings"
 )
 
+var ErrRemoteSessionClosed = errors.New("remote session is closed")
+
+type RemoteSession interface {
+	OpenShell() error
+	ListRemote(targetPath string) ([]domain.FileEntry, string, error)
+	PathExists(targetPath string) (bool, error)
+	Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error
+	Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error
+	HomeDir() (string, error)
+	Close() error
+}
+
 type RemoteClient interface {
+	ProbeShell(conn domain.Connection, password string) error
+	OpenSession(conn domain.Connection, password string) (RemoteSession, error)
 	OpenShell(conn domain.Connection, password string) error
 	RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error
 	ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error)
@@ -198,6 +212,76 @@ type SessionService struct {
 	repo   *sqlite.Repository
 	crypto *security.Crypto
 	remote RemoteClient
+}
+
+type managedRemoteSession struct {
+	connectionID int64
+	repo         *sqlite.Repository
+	inner        RemoteSession
+}
+
+func (s *managedRemoteSession) OpenShell() error {
+	if err := s.inner.OpenShell(); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedRemoteSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return s.inner.ListRemote(targetPath)
+}
+
+func (s *managedRemoteSession) PathExists(targetPath string) (bool, error) {
+	return s.inner.PathExists(targetPath)
+}
+
+func (s *managedRemoteSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	if err := s.inner.Upload(localPath, remoteDir, progress); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedRemoteSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	if err := s.inner.Download(remotePath, localDir, progress); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedRemoteSession) HomeDir() (string, error) {
+	return s.inner.HomeDir()
+}
+
+func (s *managedRemoteSession) Close() error {
+	if s.inner == nil {
+		return nil
+	}
+	return s.inner.Close()
+}
+
+func (s *SessionService) ProbeShell(connectionID int64) error {
+	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	if err != nil {
+		return err
+	}
+	return s.remote.ProbeShell(conn, password)
+}
+
+func (s *SessionService) OpenSession(connectionID int64) (RemoteSession, error) {
+	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	session, err := s.remote.OpenSession(conn, password)
+	if err != nil {
+		return nil, err
+	}
+	return &managedRemoteSession{
+		connectionID: connectionID,
+		repo:         s.repo,
+		inner:        session,
+	}, nil
 }
 
 func (s *SessionService) OpenShell(connectionID int64) error {

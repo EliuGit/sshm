@@ -1,19 +1,25 @@
 package app
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
 	"sshm/internal/security"
 	"sshm/internal/store/sqlite"
+	"strings"
+	"testing"
 )
 
 type noopRemote struct{}
+type noopSession struct{}
 
+func (noopRemote) ProbeShell(conn domain.Connection, password string) error { return nil }
+func (noopRemote) OpenSession(conn domain.Connection, password string) (RemoteSession, error) {
+	return &noopSession{}, nil
+}
 func (noopRemote) OpenShell(conn domain.Connection, password string) error { return nil }
 func (noopRemote) RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error {
 	return nil
@@ -156,6 +162,107 @@ func (noopRemote) Download(conn domain.Connection, password string, remotePath s
 	return nil
 }
 func (noopRemote) HomeDir(conn domain.Connection, password string) (string, error) { return "/", nil }
+
+func (*noopSession) OpenShell() error { return nil }
+func (*noopSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*noopSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (*noopSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*noopSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*noopSession) HomeDir() (string, error) { return "/", nil }
+func (*noopSession) Close() error             { return nil }
+
+type probeRemote struct {
+	probeErr error
+	probed   bool
+}
+
+type trackingSession struct {
+	openShellCalls int
+}
+
+func (r *probeRemote) ProbeShell(conn domain.Connection, password string) error {
+	r.probed = true
+	return r.probeErr
+}
+
+func (r *probeRemote) OpenSession(conn domain.Connection, password string) (RemoteSession, error) {
+	if r.probeErr != nil {
+		return nil, r.probeErr
+	}
+	return &noopSession{}, nil
+}
+
+func (*probeRemote) OpenShell(conn domain.Connection, password string) error { return nil }
+func (*probeRemote) RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error {
+	return nil
+}
+func (*probeRemote) ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*probeRemote) PathExists(conn domain.Connection, password string, targetPath string) (bool, error) {
+	return false, nil
+}
+func (*probeRemote) Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*probeRemote) Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*probeRemote) HomeDir(conn domain.Connection, password string) (string, error) { return "/", nil }
+
+func (s *trackingSession) OpenShell() error {
+	s.openShellCalls++
+	return nil
+}
+func (*trackingSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*trackingSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (*trackingSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*trackingSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*trackingSession) HomeDir() (string, error) { return "/", nil }
+func (*trackingSession) Close() error             { return nil }
+
+type sessionOpenRemote struct {
+	session *trackingSession
+}
+
+func (r *sessionOpenRemote) ProbeShell(conn domain.Connection, password string) error { return nil }
+func (r *sessionOpenRemote) OpenSession(conn domain.Connection, password string) (RemoteSession, error) {
+	if r.session == nil {
+		r.session = &trackingSession{}
+	}
+	return r.session, nil
+}
+func (*sessionOpenRemote) OpenShell(conn domain.Connection, password string) error { return nil }
+func (*sessionOpenRemote) RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error {
+	return nil
+}
+func (*sessionOpenRemote) ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*sessionOpenRemote) PathExists(conn domain.Connection, password string, targetPath string) (bool, error) {
+	return false, nil
+}
+func (*sessionOpenRemote) Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*sessionOpenRemote) Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*sessionOpenRemote) HomeDir(conn domain.Connection, password string) (string, error) {
+	return "/", nil
+}
 
 func TestConnectionUpdateKeepsPassword(t *testing.T) {
 	t.Parallel()
@@ -361,5 +468,132 @@ func TestConnectionResolveNamesRejectsDuplicateNames(t *testing.T) {
 
 	if _, err := services.Connections.ResolveNames([]string{"prod"}); err == nil {
 		t.Fatal("ResolveNames() error = nil, want duplicate error")
+	}
+}
+
+func TestSessionProbeShellDoesNotMarkConnectionUsed(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	repo, err := sqlite.Open(filepath.Join(tempDir, "sshm.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer repo.Close()
+
+	crypto, err := security.LoadOrCreateKey(filepath.Join(tempDir, "app.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateKey() error = %v", err)
+	}
+
+	remote := &probeRemote{}
+	services := NewServices(repo, crypto, remote, "~/.ssh/id_rsa")
+	created, err := services.Connections.Create(domain.ConnectionInput{
+		Name:     "prod",
+		Host:     "example.com",
+		Port:     22,
+		Username: "root",
+		AuthType: domain.AuthTypePrivateKey,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if err := services.Sessions.ProbeShell(created.ID); err != nil {
+		t.Fatalf("ProbeShell() error = %v", err)
+	}
+	if !remote.probed {
+		t.Fatal("ProbeShell() did not call remote probe")
+	}
+
+	loaded, err := services.Connections.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if loaded.LastUsedAt != nil {
+		t.Fatalf("LastUsedAt = %v, want nil", loaded.LastUsedAt)
+	}
+}
+
+func TestSessionProbeShellReturnsRemoteError(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	repo, err := sqlite.Open(filepath.Join(tempDir, "sshm.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer repo.Close()
+
+	crypto, err := security.LoadOrCreateKey(filepath.Join(tempDir, "app.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateKey() error = %v", err)
+	}
+
+	expected := errors.New("auth failed")
+	remote := &probeRemote{probeErr: expected}
+	services := NewServices(repo, crypto, remote, "~/.ssh/id_rsa")
+	created, err := services.Connections.Create(domain.ConnectionInput{
+		Name:     "prod",
+		Host:     "example.com",
+		Port:     22,
+		Username: "root",
+		AuthType: domain.AuthTypePrivateKey,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	err = services.Sessions.ProbeShell(created.ID)
+	if !errors.Is(err, expected) {
+		t.Fatalf("ProbeShell() error = %v, want %v", err, expected)
+	}
+}
+
+func TestOpenSessionShellMarksConnectionUsed(t *testing.T) {
+	t.Parallel()
+
+	tempDir := t.TempDir()
+	repo, err := sqlite.Open(filepath.Join(tempDir, "sshm.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	defer repo.Close()
+
+	crypto, err := security.LoadOrCreateKey(filepath.Join(tempDir, "app.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateKey() error = %v", err)
+	}
+
+	remote := &sessionOpenRemote{}
+	services := NewServices(repo, crypto, remote, "~/.ssh/id_rsa")
+	created, err := services.Connections.Create(domain.ConnectionInput{
+		Name:     "prod",
+		Host:     "example.com",
+		Port:     22,
+		Username: "root",
+		AuthType: domain.AuthTypePrivateKey,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	session, err := services.Sessions.OpenSession(created.ID)
+	if err != nil {
+		t.Fatalf("OpenSession() error = %v", err)
+	}
+	if err := session.OpenShell(); err != nil {
+		t.Fatalf("session.OpenShell() error = %v", err)
+	}
+	if remote.session == nil || remote.session.openShellCalls != 1 {
+		t.Fatalf("openShellCalls = %d, want 1", remote.session.openShellCalls)
+	}
+
+	loaded, err := services.Connections.Get(created.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+	if loaded.LastUsedAt == nil {
+		t.Fatal("LastUsedAt = nil, want non-nil")
 	}
 }

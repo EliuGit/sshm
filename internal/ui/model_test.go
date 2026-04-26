@@ -1,15 +1,103 @@
 package ui
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
+	"sshm/internal/app"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/security"
+	"sshm/internal/store/sqlite"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 )
+
+type probeOnlyRemote struct {
+	probeErr error
+}
+
+type stubRemoteSession struct{}
+
+func (*stubRemoteSession) OpenShell() error { return nil }
+func (*stubRemoteSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*stubRemoteSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (*stubRemoteSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*stubRemoteSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*stubRemoteSession) HomeDir() (string, error) { return "/", nil }
+func (*stubRemoteSession) Close() error             { return nil }
+
+func (r probeOnlyRemote) ProbeShell(conn domain.Connection, password string) error { return r.probeErr }
+func (r probeOnlyRemote) OpenSession(conn domain.Connection, password string) (app.RemoteSession, error) {
+	if r.probeErr != nil {
+		return nil, r.probeErr
+	}
+	return &stubRemoteSession{}, nil
+}
+func (probeOnlyRemote) OpenShell(conn domain.Connection, password string) error { return nil }
+func (probeOnlyRemote) RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error {
+	return nil
+}
+func (probeOnlyRemote) ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (probeOnlyRemote) PathExists(conn domain.Connection, password string, targetPath string) (bool, error) {
+	return false, nil
+}
+func (probeOnlyRemote) Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (probeOnlyRemote) Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (probeOnlyRemote) HomeDir(conn domain.Connection, password string) (string, error) {
+	return "/", nil
+}
+
+func newModelWithProbeServices(t *testing.T, probeErr error) *Model {
+	t.Helper()
+
+	tempDir := t.TempDir()
+	repo, err := sqlite.Open(filepath.Join(tempDir, "sshm.db"))
+	if err != nil {
+		t.Fatalf("sqlite.Open() error = %v", err)
+	}
+	t.Cleanup(func() { _ = repo.Close() })
+
+	crypto, err := security.LoadOrCreateKey(filepath.Join(tempDir, "app.key"))
+	if err != nil {
+		t.Fatalf("LoadOrCreateKey() error = %v", err)
+	}
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	services := app.NewServices(repo, crypto, probeOnlyRemote{probeErr: probeErr}, "~/.ssh/id_rsa")
+	model := NewModel(services, translator, "", "~/.ssh/id_rsa")
+	created, err := services.Connections.Create(domain.ConnectionInput{
+		Name:     "prod",
+		Host:     "example.com",
+		Port:     22,
+		Username: "root",
+		AuthType: domain.AuthTypePrivateKey,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	model.connections = []Connection{created}
+	return model
+}
 
 func TestNewModelUsesRuntimeDefaults(t *testing.T) {
 	t.Parallel()
@@ -360,6 +448,200 @@ func TestHomeCtrlShortcutsStillWork(t *testing.T) {
 	got = updated.(*Model)
 	if got.overlay != overlayGroup || got.groups.mode != groupPanelMove || got.groups.targetID != 9 || cmd == nil {
 		t.Fatalf("ctrl+g overlay=%v mode=%v target=%d cmd nil=%v, want move group overlay", got.overlay, got.groups.mode, got.groups.targetID, cmd == nil)
+	}
+}
+
+func TestHomeEnterStartsShellProbe(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, nil)
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
+	got := updated.(*Model)
+	if !got.connecting {
+		t.Fatal("connecting = false, want true")
+	}
+	if got.Result().ShellSession != nil {
+		t.Fatalf("ShellSession = %#v, want nil before probe completes", got.Result().ShellSession)
+	}
+	if got.status != got.translator.T("status.connecting_shell", "prod") {
+		t.Fatalf("status = %q, want connecting status", got.status)
+	}
+	if !strings.Contains(got.viewHome(), got.translator.T("status.connecting_shell", "prod")) {
+		t.Fatalf("viewHome() = %q, want connecting status rendered", got.viewHome())
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want probe command")
+	}
+
+	msg := cmd()
+	probeDone, ok := msg.(homeProbeDoneMsg)
+	if !ok {
+		t.Fatalf("cmd() msg = %T, want homeProbeDoneMsg", msg)
+	}
+	if probeDone.action != homeProbeShell || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.session == nil {
+		t.Fatalf("probeDone = %#v", probeDone)
+	}
+}
+
+func TestShellProbeFailureStaysOnHomeAndShowsError(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, errors.New("auth failed"))
+	model.selected = 0
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want probe command")
+	}
+	got := updated.(*Model)
+
+	updated, nextCmd := got.Update(cmd())
+	if nextCmd != nil {
+		t.Fatalf("nextCmd = %v, want nil on probe failure", nextCmd)
+	}
+	got = updated.(*Model)
+	if got.page != pageHome {
+		t.Fatalf("page = %v, want %v", got.page, pageHome)
+	}
+	if got.connecting {
+		t.Fatal("connecting = true, want false")
+	}
+	if got.selected != 0 {
+		t.Fatalf("selected = %d, want 0", got.selected)
+	}
+	if got.err == nil {
+		t.Fatal("err = nil, want error status")
+	}
+	want := got.translator.T("status.shell_connect_failed", "prod", "auth failed")
+	if got.status != want {
+		t.Fatalf("status = %q, want %q", got.status, want)
+	}
+}
+
+func TestShellProbeSuccessTransitionsToShellReady(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, nil)
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want probe command")
+	}
+
+	updated, nextCmd := updated.(*Model).Update(cmd())
+	if nextCmd == nil {
+		t.Fatal("nextCmd = nil, want shell ready command")
+	}
+
+	msg := nextCmd()
+	shellReady, ok := msg.(shellReadyMsg)
+	if !ok {
+		t.Fatalf("nextCmd() msg = %T, want shellReadyMsg", msg)
+	}
+	if shellReady.session == nil {
+		t.Fatal("session = nil, want non-nil")
+	}
+
+	finalModel, quitCmd := updated.(*Model).Update(msg)
+	if quitCmd == nil {
+		t.Fatal("quitCmd = nil, want tea.Quit")
+	}
+	if finalModel.(*Model).Result().ShellSession != shellReady.session {
+		t.Fatalf("ShellSession = %#v, want %#v", finalModel.(*Model).Result().ShellSession, shellReady.session)
+	}
+}
+
+func TestHomeCtrlOStartsBrowserProbe(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, nil)
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlO})
+	got := updated.(*Model)
+	if !got.connecting {
+		t.Fatal("connecting = false, want true")
+	}
+	if got.page != pageHome {
+		t.Fatalf("page = %v, want %v before probe completes", got.page, pageHome)
+	}
+	if got.status != got.translator.T("status.connecting_browser", "prod") {
+		t.Fatalf("status = %q, want browser connecting status", got.status)
+	}
+	if !strings.Contains(got.viewHome(), got.translator.T("status.connecting_browser", "prod")) {
+		t.Fatalf("viewHome() = %q, want browser connecting status rendered", got.viewHome())
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want browser probe command")
+	}
+
+	msg := cmd()
+	probeDone, ok := msg.(homeProbeDoneMsg)
+	if !ok {
+		t.Fatalf("cmd() msg = %T, want homeProbeDoneMsg", msg)
+	}
+	if probeDone.action != homeProbeBrowser || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.session == nil {
+		t.Fatalf("probeDone = %#v", probeDone)
+	}
+}
+
+func TestBrowserProbeFailureStaysOnHomeAndShowsError(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, errors.New("host unreachable"))
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlO})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want browser probe command")
+	}
+
+	updated, nextCmd := updated.(*Model).Update(cmd())
+	if nextCmd != nil {
+		t.Fatalf("nextCmd = %v, want nil on browser probe failure", nextCmd)
+	}
+	got := updated.(*Model)
+	if got.page != pageHome {
+		t.Fatalf("page = %v, want %v", got.page, pageHome)
+	}
+	if got.connecting {
+		t.Fatal("connecting = true, want false")
+	}
+	want := got.translator.T("status.browser_connect_failed", "prod", "host unreachable")
+	if got.status != want {
+		t.Fatalf("status = %q, want %q", got.status, want)
+	}
+}
+
+func TestBrowserProbeSuccessOpensBrowser(t *testing.T) {
+	t.Parallel()
+
+	model := newModelWithProbeServices(t, nil)
+
+	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlO})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want browser probe command")
+	}
+
+	updated, nextCmd := updated.(*Model).Update(cmd())
+	if nextCmd == nil {
+		t.Fatal("nextCmd = nil, want browser load commands")
+	}
+
+	got := updated.(*Model)
+	if got.page != pageBrowser {
+		t.Fatalf("page = %v, want %v", got.page, pageBrowser)
+	}
+	if got.connecting {
+		t.Fatal("connecting = true, want false")
+	}
+	if got.browser.connectionID == 0 || got.browser.connection.Name != "prod" {
+		t.Fatalf("browser connection = %#v", got.browser.connection)
+	}
+	if got.browser.session == nil {
+		t.Fatal("browser session = nil, want non-nil")
+	}
+	if !got.browser.localPanel.loading || !got.browser.remotePanel.loading {
+		t.Fatalf("loading local=%v remote=%v, want both true", got.browser.localPanel.loading, got.browser.remotePanel.loading)
 	}
 }
 

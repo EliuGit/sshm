@@ -60,10 +60,12 @@ func main() {
 		}
 
 		result := model.Result()
-		if result.ShellConnectionID == 0 {
+		if result.ShellSession == nil {
 			return
 		}
-		if err := services.Sessions.OpenShell(result.ShellConnectionID); err != nil {
+		err = result.ShellSession.OpenShell()
+		_ = result.ShellSession.Close()
+		if err != nil {
 			fmt.Fprintf(os.Stderr, translator.T("app.ssh_session_failed"), translator.Error(err))
 		}
 	}

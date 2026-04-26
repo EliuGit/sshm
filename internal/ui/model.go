@@ -1,6 +1,10 @@
 package ui
 
 import (
+	"errors"
+	"fmt"
+	"io"
+	"net"
 	"sshm/internal/app"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
@@ -36,6 +40,7 @@ type Model struct {
 	status        string
 	statusSuccess bool
 	err           error
+	connecting    bool
 
 	form formState
 
@@ -217,16 +222,29 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyLoadedBrowserPanel(&m.browser.localPanel, msg.items, msg.path, msg.selectName)
 	case remoteLoadedMsg:
 		if msg.err != nil {
+			if m.page == pageBrowser && isBrowserSessionError(msg.err) {
+				return m.handleBrowserSessionFailure(msg.err)
+			}
 			m.setErrorStatus(msg.err)
 			m.browser.remotePanel.loading = false
 			return m, nil
 		}
 		m.applyLoadedBrowserPanel(&m.browser.remotePanel, msg.items, msg.path, msg.selectName)
+	case homeProbeDoneMsg:
+		m.connecting = false
+		if msg.err != nil {
+			m.setErrorStatus(fmt.Errorf(m.homeProbeFailedStatus(msg.action, msg.connectionName, msg.err)))
+			return m, nil
+		}
+		return m.completeHomeProbe(msg)
 	case shellReadyMsg:
-		m.result.ShellConnectionID = msg.connectionID
+		m.result.ShellSession = msg.session
 		return m, tea.Quit
 	case opDoneMsg:
 		if msg.err != nil {
+			if m.page == pageBrowser && isBrowserSessionError(msg.err) {
+				return m.handleBrowserSessionFailure(msg.err)
+			}
 			m.setErrorStatus(msg.err)
 			return m, nil
 		}
@@ -261,6 +279,77 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	default:
 		return m, nil
 	}
+}
+
+func (m *Model) homeProbeFailedStatus(action homeProbeAction, connectionName string, err error) string {
+	switch action {
+	case homeProbeBrowser:
+		return m.translator.T("status.browser_connect_failed", connectionName, m.translator.Error(err))
+	default:
+		return m.translator.T("status.shell_connect_failed", connectionName, m.translator.Error(err))
+	}
+}
+
+func (m *Model) completeHomeProbe(msg homeProbeDoneMsg) (tea.Model, tea.Cmd) {
+	switch msg.action {
+	case homeProbeBrowser:
+		return m.openBrowserForConnection(msg.connection, msg.session)
+	default:
+		return m, func() tea.Msg {
+			return shellReadyMsg{session: msg.session}
+		}
+	}
+}
+
+func (m *Model) openBrowserForConnection(conn Connection, session app.RemoteSession) (tea.Model, tea.Cmd) {
+	m.page = pageBrowser
+	m.browser = newBrowserState(m.translator, m.theme)
+	m.browser.connectionID = conn.ID
+	m.browser.connection = conn
+	m.browser.session = session
+	m.browser.localPanel.path = m.startupDir
+	m.browser.remotePanel.path = "."
+	m.browser.activePanel = domain.LocalPanel
+	m.browser.localPanel.loading = true
+	m.browser.remotePanel.loading = true
+	return m, tea.Batch(
+		tea.ClearScreen,
+		m.loadLocalCmd(m.browser.localPanel.path, m.browser.localPanel.filter),
+		m.loadRemoteCmd(m.browser.remotePanel.path, m.browser.remotePanel.filter),
+	)
+}
+
+func (m *Model) handleBrowserSessionFailure(err error) (tea.Model, tea.Cmd) {
+	m.closeBrowserSession()
+	m.page = pageHome
+	m.overlay = overlayNone
+	m.browser.localPanel.loading = false
+	m.browser.remotePanel.loading = false
+	m.setErrorStatus(err)
+	return m, tea.Batch(tea.ClearScreen, m.loadConnectionsCmd())
+}
+
+func isBrowserSessionError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, app.ErrRemoteSessionClosed) {
+		return true
+	}
+	message := strings.ToLower(err.Error())
+	for _, fragment := range []string{
+		"broken pipe",
+		"connection reset by peer",
+		"use of closed network connection",
+		"connection closed",
+		"failed to create session",
+		"remote session is closed",
+	} {
+		if strings.Contains(message, fragment) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Model) View() string {

@@ -1,6 +1,9 @@
 package ui
 
-import "sshm/internal/domain"
+import (
+	"sshm/internal/app"
+	"sshm/internal/domain"
+)
 
 type connectionsLoadedMsg struct {
 	items []domain.Connection
@@ -53,7 +56,22 @@ type remoteLoadedMsg struct {
 }
 
 type shellReadyMsg struct {
-	connectionID int64
+	session app.RemoteSession
+}
+
+type homeProbeAction int
+
+const (
+	homeProbeShell homeProbeAction = iota
+	homeProbeBrowser
+)
+
+type homeProbeDoneMsg struct {
+	action         homeProbeAction
+	connectionName string
+	connection     Connection
+	session        app.RemoteSession
+	err            error
 }
 
 type opDoneMsg struct {

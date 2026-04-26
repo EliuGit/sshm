@@ -6,14 +6,14 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
 	"sshm/internal/app"
 	"sshm/internal/buildinfo"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
 	"sshm/internal/security"
 	"sshm/internal/store/sqlite"
+	"strings"
+	"testing"
 )
 
 type fakeRemote struct {
@@ -22,6 +22,16 @@ type fakeRemote struct {
 	runCalls     []string
 	uploadCalls  []string
 	downloadCall []string
+}
+
+type fakeSession struct{}
+
+func (f *fakeRemote) ProbeShell(conn domain.Connection, password string) error {
+	return nil
+}
+
+func (f *fakeRemote) OpenSession(conn domain.Connection, password string) (app.RemoteSession, error) {
+	return &fakeSession{}, nil
 }
 
 func (f *fakeRemote) OpenShell(conn domain.Connection, password string) error {
@@ -60,6 +70,20 @@ func (f *fakeRemote) Download(conn domain.Connection, password string, remotePat
 func (f *fakeRemote) HomeDir(conn domain.Connection, password string) (string, error) {
 	return "/", nil
 }
+
+func (*fakeSession) OpenShell() error { return nil }
+func (*fakeSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return nil, "", nil
+}
+func (*fakeSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (*fakeSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*fakeSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	return nil
+}
+func (*fakeSession) HomeDir() (string, error) { return "/", nil }
+func (*fakeSession) Close() error             { return nil }
 
 func TestParseRejectsConnectionNameShortcut(t *testing.T) {
 	t.Parallel()
