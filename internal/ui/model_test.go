@@ -130,7 +130,7 @@ func TestHomeHeaderShowsVersionAndAuthor(t *testing.T) {
 
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
 	header := model.viewHomeHeader()
-	if !strings.Contains(header, "TUI SSH 管理器") || !strings.Contains(header, "dev") || !strings.Contains(header, "nullecho") {
+	if !strings.Contains(header, "SSH 管理器") || !strings.Contains(header, "dev") || !strings.Contains(header, "nullecho") {
 		t.Fatalf("header = %q, want title, version and author", header)
 	}
 }
