@@ -16,6 +16,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.overlay == overlayBrowserInput {
 			switch keyMsg.String() {
 			case "esc":
+				m.clearStaleErrorStatus()
 				m.overlay = overlayNone
 				return m, nil
 			case "enter":
@@ -39,53 +40,17 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.loadRemoteCmd(value, m.browser.remotePanel.filter)
 			default:
 				var cmd tea.Cmd
+				m.clearStaleErrorStatus()
 				m.browser.input, cmd = m.browser.input.Update(msg)
 				return m, cmd
 			}
 		}
 
-		if m.overlay == overlayBrowserConfirm {
-			switch keyMsg.String() {
-			case "tab", "left", "right", "h", "l":
-				m.browser.confirmYes = !m.browser.confirmYes
-				return m, nil
-			case "y", "enter":
-				if keyMsg.String() == "enter" && !m.browser.confirmYes {
-					m.overlay = overlayNone
-					m.browser.pending = nil
-					m.setInfoStatus(m.translator.T("status.transfer_cancelled"))
-					return m, nil
-				}
-				pending := m.browser.pending
-				m.overlay = overlayNone
-				m.browser.pending = nil
-				if pending == nil {
-					return m, nil
-				}
-				progressCh := make(chan transferProgressMsg, 16)
-				return m, tea.Batch(
-					func() tea.Msg {
-						err := pending.run(func(progress domain.TransferProgress) {
-							select {
-							case progressCh <- transferProgressMsg{progress: progress, action: pending.action, source: progressCh}:
-							default:
-							}
-						})
-						close(progressCh)
-						if err != nil {
-							return opDoneMsg{err: err}
-						}
-						return opDoneMsg{status: pending.success, success: true, reloadBrowser: true, targetPanel: pending.panel, selectName: pending.selectBy}
-					},
-					listenTransferProgress(progressCh),
-				)
-			case "n", "esc":
-				m.overlay = overlayNone
-				m.browser.pending = nil
-				m.setInfoStatus(m.translator.T("status.transfer_cancelled"))
-				return m, nil
+		if m.hasActiveConfirm(confirmActionBrowserOverwrite) {
+			next, cmd, handled := m.handleConfirmKey(keyMsg)
+			if handled {
+				return next, cmd
 			}
-			return m, nil
 		}
 
 		switch keyMsg.String() {
@@ -98,6 +63,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "esc":
 			return m, m.clearActiveBrowserFilter()
 		case "tab":
+			m.clearStaleErrorStatus()
 			if m.browser.activePanel == domain.LocalPanel {
 				m.browser.activePanel = domain.RemotePanel
 			} else {
@@ -106,29 +72,35 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			panel := m.activeBrowserPanel()
 			if panel.cursor > 0 {
+				m.clearStaleErrorStatus()
 				panel.cursor--
 			}
 		case "down", "j":
 			panel := m.activeBrowserPanel()
 			if panel.cursor < len(panel.rows())-1 {
+				m.clearStaleErrorStatus()
 				panel.cursor++
 			}
 		case "g":
+			m.clearStaleErrorStatus()
 			panel := m.activeBrowserPanel()
 			panel.cursor = 0
 		case "/":
+			m.clearStaleErrorStatus()
 			m.overlay = overlayBrowserInput
 			m.browser.inputMode = browserInputFilter
 			m.browser.input.SetValue(m.activeBrowserPanel().filter)
 			m.browser.input.Focus()
 			return m, nil
 		case ":":
+			m.clearStaleErrorStatus()
 			m.overlay = overlayBrowserInput
 			m.browser.inputMode = browserInputGoto
 			m.browser.input.SetValue(m.activeBrowserPanel().path)
 			m.browser.input.Focus()
 			return m, nil
 		case "r":
+			m.clearStaleErrorStatus()
 			return m, m.reloadBrowserCmd()
 		case "enter", "right", "l":
 			row, ok := m.activeBrowserPanel().selected()
@@ -136,6 +108,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			if row.Name == ".." || row.IsDir {
+				m.clearStaleErrorStatus()
 				if m.browser.activePanel == domain.LocalPanel {
 					return m, m.loadLocalCmd(row.Path, m.browser.localPanel.filter)
 				}
@@ -147,11 +120,12 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if panel.path == next {
 				return m, nil
 			}
+			m.clearStaleErrorStatus()
 			if m.browser.activePanel == domain.LocalPanel {
 				return m, m.loadLocalCmd(next, panel.filter)
 			}
 			return m, m.loadRemoteCmd(next, panel.filter)
-		case "u":
+		case "ctrl+u":
 			if m.browser.activePanel != domain.LocalPanel {
 				m.setInfoStatus(m.translator.T("status.focus_local_upload"))
 				return m, nil
@@ -160,6 +134,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok || row.Name == ".." {
 				return m, nil
 			}
+			m.clearStaleErrorStatus()
 			targetPath := joinRemotePath(m.browser.remotePanel.path, row.Name)
 			return m.prepareTransfer(m.translator.T("status.uploading"), row.Path, targetPath, domain.RemotePanel, func(progress func(domain.TransferProgress)) error {
 				if m.browser.session == nil {
@@ -167,7 +142,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				return m.browser.session.Upload(row.Path, m.browser.remotePanel.path, progress)
 			}, m.translator.T("status.uploaded", row.Name), row.Name)
-		case "d":
+		case "ctrl+d":
 			if m.browser.activePanel != domain.RemotePanel {
 				m.setInfoStatus(m.translator.T("status.focus_remote_download"))
 				return m, nil
@@ -176,6 +151,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if !ok || row.Name == ".." {
 				return m, nil
 			}
+			m.clearStaleErrorStatus()
 			targetPath := filepath.Join(m.browser.localPanel.path, row.Name)
 			return m.prepareTransfer(m.translator.T("status.downloading"), row.Path, targetPath, domain.LocalPanel, func(progress func(domain.TransferProgress)) error {
 				if m.browser.session == nil {
@@ -210,11 +186,7 @@ func (m *Model) prepareTransfer(action string, sourcePath string, targetPath str
 		return m, nil
 	}
 	if exists {
-		m.overlay = overlayBrowserConfirm
-		m.browser.confirmTitle = m.translator.T("browser.overwrite")
-		m.browser.confirmPath = targetPath
-		m.browser.confirmYes = false
-		m.browser.pending = &browserTransfer{
+		m.openBrowserOverwriteConfirm(sourcePath, targetPath, &browserTransfer{
 			action:   action,
 			source:   sourcePath,
 			target:   targetPath,
@@ -222,7 +194,7 @@ func (m *Model) prepareTransfer(action string, sourcePath string, targetPath str
 			success:  success,
 			panel:    panel,
 			selectBy: selectName,
-		}
+		})
 		return m, nil
 	}
 	progressCh := make(chan transferProgressMsg, 16)
@@ -377,19 +349,15 @@ func (m *Model) renderBrowserFooter(width int, height int) string {
 	case overlayBrowserConfirm:
 		yesButton := "[ " + m.translator.T("browser.yes") + " ]"
 		noButton := "[ " + m.translator.T("browser.no") + " ]"
-		sourcePath := m.browser.confirmPath
-		if m.browser.pending != nil {
-			sourcePath = m.browser.pending.source
-		}
-		if m.browser.confirmYes {
+		if m.confirm.confirmSelection {
 			yesButton = styles.Selection.Render(yesButton)
 		} else {
 			noButton = styles.Selection.Render(noButton)
 		}
 		lines = []string{
-			styles.FieldLabel.Render(m.browser.confirmTitle),
-			styles.SubtleText.Render(m.translator.T("browser.confirm_source", truncate(sourcePath, max(20, width-12)))),
-			truncate(m.translator.T("browser.confirm_target", m.browser.confirmPath), max(20, width-8)),
+			styles.FieldLabel.Render(m.confirm.title),
+			styles.SubtleText.Render(m.confirmSourceText(width - 12)),
+			m.confirmTargetText(width - 8),
 			lipgloss.JoinHorizontal(lipgloss.Left, yesButton, "  ", noButton),
 			localizedShortcutHelpWidth(m.translator, m.theme, max(24, width-8),
 				"←/→", "shortcut.choose",
@@ -409,8 +377,8 @@ func (m *Model) renderBrowserFooter(width int, height int) string {
 				"tab", "shortcut.switch",
 				"/", "shortcut.filter",
 				":", "shortcut.goto",
-				"u", "shortcut.upload",
-				"d", "shortcut.download",
+				"c-u", "shortcut.upload",
+				"c-d", "shortcut.download",
 				"r", "shortcut.refresh",
 				"g", "shortcut.top",
 				"esc", "shortcut.clear_filter",

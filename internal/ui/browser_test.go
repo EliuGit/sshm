@@ -206,7 +206,7 @@ func TestBrowserFooterMatchesActiveShortcuts(t *testing.T) {
 	model.browser.localPanel.path = `C:\work\project`
 
 	footer := model.renderBrowserFooter(220, 8)
-	for _, key := range []string{"j/k", "enter/l", "h/backspace", "tab", "/", ":", "u", "d", "r", "g", "esc", "q"} {
+	for _, key := range []string{"j/k", "enter/l", "h/backspace", "tab", "/", ":", "c-u", "c-d", "r", "g", "esc", "q"} {
 		if !strings.Contains(footer, key) {
 			t.Fatalf("footer = %q, want shortcut %q", footer, key)
 		}
@@ -224,8 +224,14 @@ func TestBrowserConfirmFooterShowsSourceAndTarget(t *testing.T) {
 	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
 	model.page = pageBrowser
 	model.overlay = overlayBrowserConfirm
-	model.browser.confirmTitle = translator.T("browser.overwrite")
-	model.browser.confirmPath = `/tmp/archive.log`
+	model.confirm = confirmState{
+		action:           confirmActionBrowserOverwrite,
+		title:            translator.T("browser.overwrite"),
+		sourcePath:       `C:\work\project\archive.log`,
+		targetPath:       `/tmp/archive.log`,
+		confirmSelection: false,
+		choiceEnabled:    true,
+	}
 	model.browser.pending = &browserTransfer{source: `C:\work\project\archive.log`}
 
 	footer := model.renderBrowserFooter(100, 8)
@@ -234,6 +240,136 @@ func TestBrowserConfirmFooterShowsSourceAndTarget(t *testing.T) {
 	}
 	if !strings.Contains(footer, "目标：") || !strings.Contains(footer, `/tmp/archive.log`) {
 		t.Fatalf("footer = %q, want target path", footer)
+	}
+}
+
+func TestBrowserConfirmEscCancelsOnlyConfirmState(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.overlay = overlayBrowserConfirm
+	model.browser.activePanel = domain.RemotePanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.filter = "log"
+	model.browser.remotePanel.path = "/var/log"
+	model.browser.remotePanel.filter = "app"
+	model.browser.pending = &browserTransfer{
+		source:   `C:\work\project\archive.log`,
+		target:   "/var/log/archive.log",
+		selectBy: "archive.log",
+		panel:    domain.RemotePanel,
+	}
+	model.confirm = confirmState{
+		action:           confirmActionBrowserOverwrite,
+		title:            translator.T("browser.overwrite"),
+		sourcePath:       `C:\work\project\archive.log`,
+		targetPath:       "/var/log/archive.log",
+		choiceEnabled:    true,
+		confirmSelection: false,
+	}
+
+	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(*Model)
+	if got.overlay != overlayNone {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
+	}
+	if got.confirm.action != confirmActionNone {
+		t.Fatalf("confirm.action = %v, want none", got.confirm.action)
+	}
+	if got.browser.pending != nil {
+		t.Fatalf("pending = %#v, want nil", got.browser.pending)
+	}
+	if got.page != pageBrowser {
+		t.Fatalf("page = %v, want %v", got.page, pageBrowser)
+	}
+	if got.browser.activePanel != domain.RemotePanel || got.browser.localPanel.path != `C:\work\project` || got.browser.remotePanel.path != "/var/log" {
+		t.Fatalf("browser state changed unexpectedly: active=%v local=%q remote=%q", got.browser.activePanel, got.browser.localPanel.path, got.browser.remotePanel.path)
+	}
+	if got.browser.localPanel.filter != "log" || got.browser.remotePanel.filter != "app" {
+		t.Fatalf("filters changed unexpectedly: local=%q remote=%q", got.browser.localPanel.filter, got.browser.remotePanel.filter)
+	}
+	if got.status != translator.T("status.transfer_cancelled") {
+		t.Fatalf("status = %q, want cancelled", got.status)
+	}
+}
+
+func TestBrowserFurtherActionClearsStaleErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.theme)
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "a.log", Path: `C:\work\project\a.log`, Panel: domain.LocalPanel},
+		{Name: "b.log", Path: `C:\work\project\b.log`, Panel: domain.LocalPanel},
+	}
+	model.setErrorStatus(errors.New("列表加载失败"))
+
+	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := updated.(*Model)
+
+	if got.err != nil {
+		t.Fatal("err != nil, want cleared after further action")
+	}
+	if got.status != translator.T("status.browser_ready") {
+		t.Fatalf("status = %q, want browser ready", got.status)
+	}
+	if got.browser.localPanel.cursor != 1 {
+		t.Fatalf("cursor = %d, want 1", got.browser.localPanel.cursor)
+	}
+}
+
+func TestBrowserPlainUploadDownloadKeysDoNotTriggerTransfer(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.theme)
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.remotePanel.path = "/tmp"
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "archive.log", Path: `C:\work\project\archive.log`, Panel: domain.LocalPanel},
+	}
+
+	updated, cmd := model.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'u'}})
+	got := updated.(*Model)
+	if cmd != nil {
+		t.Fatal("cmd != nil, want no transfer command for plain u")
+	}
+	if got.overlay != overlayNone || got.browser.pending != nil {
+		t.Fatalf("overlay=%v pending=%#v, want no confirm or pending", got.overlay, got.browser.pending)
+	}
+
+	model.browser.activePanel = domain.RemotePanel
+	model.browser.remotePanel.items = []domain.FileEntry{
+		{Name: "archive.log", Path: "/tmp/archive.log", Panel: domain.RemotePanel},
+	}
+	updated, cmd = model.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	got = updated.(*Model)
+	if cmd != nil {
+		t.Fatal("cmd != nil, want no transfer command for plain d")
+	}
+	if got.overlay != overlayNone || got.browser.pending != nil {
+		t.Fatalf("overlay=%v pending=%#v, want no confirm or pending", got.overlay, got.browser.pending)
 	}
 }
 

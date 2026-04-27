@@ -242,28 +242,142 @@ func TestGroupDeleteRequiresConfirmation(t *testing.T) {
 
 	updated, _ := model.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	got := updated.(*Model)
-	if !got.groups.confirming {
-		t.Fatalf("confirming = false, want true")
+	if !got.hasActiveConfirm(confirmActionDeleteGroup) {
+		t.Fatal("confirm action = none, want delete group confirm")
 	}
 
 	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyEsc})
 	got = updated.(*Model)
-	if !got.groups.confirming || got.overlay != overlayGroup {
-		t.Fatalf("esc should keep group confirmation open: confirming=%v overlay=%v", got.groups.confirming, got.overlay)
+	if got.hasActiveConfirm(confirmActionDeleteGroup) || got.overlay != overlayGroup {
+		t.Fatalf("esc should cancel confirmation only: confirm=%v overlay=%v", got.confirm.action, got.overlay)
 	}
 
+	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
+	got = updated.(*Model)
 	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'n'}})
 	got = updated.(*Model)
-	if got.groups.confirming || got.overlay != overlayGroup {
-		t.Fatalf("n should cancel confirmation only: confirming=%v overlay=%v", got.groups.confirming, got.overlay)
+	if got.hasActiveConfirm(confirmActionDeleteGroup) || got.overlay != overlayGroup {
+		t.Fatalf("n should cancel confirmation only: confirm=%v overlay=%v", got.confirm.action, got.overlay)
 	}
 
 	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	got = updated.(*Model)
 	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'q'}})
 	got = updated.(*Model)
-	if got.overlay != overlayNone || got.groups.confirming {
-		t.Fatalf("q should close group panel: confirming=%v overlay=%v", got.groups.confirming, got.overlay)
+	if got.overlay != overlayNone || got.hasActiveConfirm(confirmActionDeleteGroup) {
+		t.Fatalf("q should close group panel: confirm=%v overlay=%v", got.confirm.action, got.overlay)
+	}
+}
+
+func TestGroupPanelEscClosesPanelWhenNoInnerState(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.overlay = overlayGroup
+
+	updated, _ := model.updateGroupPanel(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(*Model)
+	if got.overlay != overlayNone {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
+	}
+}
+
+func TestGroupsLoadedKeepsExistingErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.setErrorStatus(errors.New("连接失败"))
+	model.overlay = overlayGroup
+
+	updated, _ := model.Update(groupsLoadedMsg{
+		items: []domain.ConnectionGroupListItem{
+			{Name: "未分组", Ungrouped: true},
+			{ID: 1, Name: "生产环境"},
+		},
+	})
+	got := updated.(*Model)
+
+	if got.err == nil {
+		t.Fatal("err = nil, want existing error preserved")
+	}
+	if got.status != "连接失败" {
+		t.Fatalf("status = %q, want preserved error text", got.status)
+	}
+	if got.renderStatus() != got.theme.Styles.ErrorText.Render("连接失败") {
+		t.Fatalf("renderStatus() = %q, want error style", got.renderStatus())
+	}
+	if len(got.groups.items) != 2 {
+		t.Fatalf("group items = %d, want 2", len(got.groups.items))
+	}
+}
+
+func TestHomeFurtherActionClearsStaleErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.connections = []Connection{
+		{ID: 1, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22},
+		{ID: 2, Name: "stage", Username: "root", Host: "10.0.0.2", Port: 22},
+	}
+	model.setErrorStatus(errors.New("连接失败"))
+
+	updated, _ := model.updateHome(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got := updated.(*Model)
+
+	if got.err != nil {
+		t.Fatal("err != nil, want cleared after further action")
+	}
+	if got.status != translator.T("status.connections_ready", 2) {
+		t.Fatalf("status = %q, want ready status", got.status)
+	}
+	if got.selected != 1 {
+		t.Fatalf("selected = %d, want 1", got.selected)
+	}
+}
+
+func TestGroupPanelFurtherActionClearsLocalError(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.overlay = overlayGroup
+	model.groups.items = []domain.ConnectionGroupListItem{
+		{Name: "未分组", Ungrouped: true},
+		{ID: 1, Name: "生产环境"},
+	}
+	model.groups.selected = 0
+
+	updated, _ := model.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'r'}})
+	got := updated.(*Model)
+	if got.groups.errorValue == "" {
+		t.Fatal("errorValue = empty, want locked error")
+	}
+
+	updated, _ = got.updateGroupPanel(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'j'}})
+	got = updated.(*Model)
+	if got.groups.errorValue != "" {
+		t.Fatalf("errorValue = %q, want cleared after move", got.groups.errorValue)
+	}
+	if got.groups.selected != 1 {
+		t.Fatalf("selected = %d, want 1", got.groups.selected)
 	}
 }
 
@@ -438,8 +552,8 @@ func TestHomeCtrlShortcutsStillWork(t *testing.T) {
 	model.connections = []Connection{{ID: 7, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22}}
 	updated, _ = model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlD})
 	got = updated.(*Model)
-	if got.overlay != overlayDelete || got.deleteTarget != 7 {
-		t.Fatalf("ctrl+d overlay=%v deleteTarget=%d, want delete overlay for 7", got.overlay, got.deleteTarget)
+	if got.overlay != overlayDelete || got.confirm.action != confirmActionDeleteConnection || got.confirm.connectionID != 7 {
+		t.Fatalf("ctrl+d overlay=%v action=%v connectionID=%d, want delete overlay for 7", got.overlay, got.confirm.action, got.confirm.connectionID)
 	}
 
 	model = NewModel(nil, translator, "", "~/.ssh/id_rsa")
@@ -745,5 +859,43 @@ func TestImportPanelUsesEscToQuitAndJKToMove(t *testing.T) {
 	got = updated.(*Model)
 	if got.page != pageHome || cmd == nil {
 		t.Fatalf("esc on preview page=%v cmd nil=%v, want home and clear screen", got.page, cmd == nil)
+	}
+}
+
+func TestImportFurtherEditClearsErrorText(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.page = pageImport
+	model.imports = newImportState(translator, model.theme)
+	model.imports.errorText = "配置读取失败"
+
+	updated, _ := model.updateImport(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	got := updated.(*Model)
+	if got.imports.errorText != "" {
+		t.Fatalf("errorText = %q, want cleared after edit", got.imports.errorText)
+	}
+}
+
+func TestFormFurtherEditClearsErrorMessage(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.page = pageForm
+	model.form = newFormState(nil, translator, "~/.ssh/id_rsa", model.theme)
+	model.form.errorMessage = "主机不能为空"
+
+	updated, _ := model.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	got := updated.(*Model)
+	if got.form.errorMessage != "" {
+		t.Fatalf("errorMessage = %q, want cleared after edit", got.form.errorMessage)
 	}
 }

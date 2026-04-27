@@ -58,6 +58,15 @@ const (
 	browserInputFilter
 )
 
+type confirmAction int
+
+const (
+	confirmActionNone confirmAction = iota
+	confirmActionDeleteConnection
+	confirmActionDeleteGroup
+	confirmActionBrowserOverwrite
+)
+
 type AppResult struct {
 	ShellSession app.RemoteSession
 }
@@ -83,7 +92,6 @@ type formState struct {
 type groupPanelState struct {
 	mode       groupPanelMode
 	inputMode  groupInputMode
-	confirming bool
 	items      []domain.ConnectionGroupListItem
 	selected   int
 	targetID   int64
@@ -110,12 +118,9 @@ type browserState struct {
 	remotePanel filePanel
 	activePanel domain.FilePanel
 
-	inputMode    browserInputMode
-	input        textinput.Model
-	confirmTitle string
-	confirmPath  string
-	pending      *browserTransfer
-	confirmYes   bool
+	inputMode browserInputMode
+	input     textinput.Model
+	pending   *browserTransfer
 }
 
 type browserTransfer struct {
@@ -136,4 +141,17 @@ type filePanel struct {
 	items   []domain.FileEntry
 	cursor  int
 	loading bool
+}
+
+type confirmState struct {
+	action           confirmAction
+	title            string
+	description      string
+	sourcePath       string
+	targetPath       string
+	confirmSelection bool
+	choiceEnabled    bool
+	connectionID     int64
+	groupID          int64
+	clearGroupFilter bool
 }

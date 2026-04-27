@@ -33,6 +33,18 @@ jobs:
             goarch: amd64
             artifact_name: release-linux-musl-amd64
             binary_name: sshm
+          - runner: macos-13
+            target_name: darwin-amd64
+            goos: darwin
+            goarch: amd64
+            artifact_name: release-darwin-amd64
+            binary_name: sshm
+          - runner: macos-14
+            target_name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            artifact_name: release-darwin-arm64
+            binary_name: sshm
           - runner: windows-latest
             target_name: windows-amd64
             goos: windows
@@ -82,6 +94,13 @@ jobs:
           go version
           gcc --version
 
+      - name: 输出 macOS 环境信息
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          go version
+          clang --version
+
       - name: 运行 Linux 测试
         if: matrix.goos == 'linux'
         shell: bash
@@ -93,6 +112,13 @@ jobs:
       - name: 运行 Windows 测试
         if: matrix.goos == 'windows'
         shell: pwsh
+        env:
+          CGO_ENABLED: "1"
+        run: go test ./...
+
+      - name: 运行 macOS 测试
+        if: matrix.goos == 'darwin'
+        shell: bash
         env:
           CGO_ENABLED: "1"
         run: go test ./...
@@ -125,11 +151,32 @@ jobs:
           $binaryPath = Join-Path "dist" "${{ matrix.binary_name }}"
           go build -trimpath -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" -o $binaryPath .
 
+      - name: 构建 macOS 二进制
+        if: matrix.goos == 'darwin'
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist
+          go build \
+            -trimpath \
+            -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
+            -o "dist/${{ matrix.binary_name }}" .
+
       - name: 打包 Linux musl 产物
         if: matrix.goos == 'linux'
         shell: bash
         run: |
           archive="sshm_${{ inputs.version }}_linux_musl_amd64.tar.gz"
+          tar -C dist -czf "dist/${archive}" sshm
+
+      - name: 打包 macOS 产物
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          archive="sshm_${{ inputs.version }}_darwin_${{ matrix.goarch }}.tar.gz"
           tar -C dist -czf "dist/${archive}" sshm
 
       - name: 打包 Windows 产物

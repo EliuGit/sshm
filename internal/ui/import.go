@@ -37,6 +37,9 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, m.previewImportCmd(m.imports.path.Value())
 			}
 			var cmd tea.Cmd
+			if m.imports.errorText != "" {
+				m.imports.errorText = ""
+			}
 			m.imports.path, cmd = m.imports.path.Update(msg)
 			return m, cmd
 		case importStepPreview:
@@ -47,18 +50,22 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.ClearScreen
 			case "up", "k":
 				if m.imports.selected > 0 {
+					m.imports.errorText = ""
 					m.imports.selected--
 				}
 				return m, nil
 			case "down", "j":
 				if m.imports.selected < len(m.imports.items)-1 {
+					m.imports.errorText = ""
 					m.imports.selected++
 				}
 				return m, nil
 			case " ":
+				m.imports.errorText = ""
 				m.cycleImportAction()
 				return m, nil
 			case "ctrl+s", "enter":
+				m.imports.errorText = ""
 				return m, m.applyImportCmd()
 			}
 		}

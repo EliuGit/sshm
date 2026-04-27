@@ -20,15 +20,18 @@ func (m *Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setInfoStatus(m.translator.T("status.cancelled"))
 			return m, tea.ClearScreen
 		case "tab", "down":
+			m.form.errorMessage = ""
 			m.form.focusIndex = m.form.nextFocus()
 			m.form.applyFocus()
 			return m, nil
 		case "shift+tab", "up":
+			m.form.errorMessage = ""
 			m.form.focusIndex = m.form.prevFocus()
 			m.form.applyFocus()
 			return m, nil
 		case "left", "right", " ":
 			if m.form.focusIndex == 4 {
+				m.form.errorMessage = ""
 				if m.form.authType == domain.AuthTypePassword {
 					m.form.authType = domain.AuthTypePrivateKey
 					m.form.keepPassword = false
@@ -48,6 +51,7 @@ func (m *Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.page = pageHome
 				return m, tea.ClearScreen
 			}
+			m.form.errorMessage = ""
 			m.form.focusIndex = m.form.nextFocus()
 			m.form.applyFocus()
 			return m, nil
@@ -55,6 +59,9 @@ func (m *Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	var cmd tea.Cmd
+	if m.form.errorMessage != "" {
+		m.form.errorMessage = ""
+	}
 	switch m.form.focusIndex {
 	case 0:
 		m.form.name, cmd = m.form.name.Update(msg)

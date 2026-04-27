@@ -23,26 +23,11 @@ func newGroupPanelState(translator *i18n.Translator, theme Theme) groupPanelStat
 }
 
 func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if m.groups.confirming {
-		switch keyMsg.String() {
-		case "y", "enter":
-			item := m.selectedGroup()
-			if item == nil || item.Ungrouped {
-				m.groups.confirming = false
-				return m, nil
-			}
-			m.groups.confirming = false
-			clearFilter := m.listScope == domain.ConnectionListScopeGroup && m.listGroupID == item.ID
-			return m, m.deleteGroupCmd(item.ID, clearFilter)
-		case "q":
-			m.overlay = overlayNone
-			m.groups.confirming = false
-			return m, nil
-		case "n":
-			m.groups.confirming = false
-			return m, nil
+	if m.hasActiveConfirm(confirmActionDeleteGroup) {
+		next, cmd, handled := m.handleConfirmKey(keyMsg)
+		if handled {
+			return next, cmd
 		}
-		return m, nil
 	}
 
 	if m.groups.inputMode != groupInputNone {
@@ -59,6 +44,7 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.groups.errorValue = m.translator.T("err.group_name_required")
 				return m, nil
 			}
+			m.clearStaleErrorStatus()
 			inputMode := m.groups.inputMode
 			groupID := m.selectedGroupID()
 			m.groups.inputMode = groupInputNone
@@ -70,25 +56,34 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.renameGroupCmd(groupID, name)
 		}
 		var cmd tea.Cmd
+		if m.groups.errorValue != "" {
+			m.groups.errorValue = ""
+		}
 		m.groups.input, cmd = m.groups.input.Update(keyMsg)
 		return m, cmd
 	}
 
 	switch keyMsg.String() {
-	case "q":
+	case "esc", "q":
+		m.clearStaleErrorStatus()
 		m.overlay = overlayNone
 		return m, nil
 	case "up", "k":
 		if m.groups.selected > 0 {
+			m.clearStaleErrorStatus()
+			m.groups.errorValue = ""
 			m.groups.selected--
 		}
 		return m, nil
 	case "down", "j":
 		if m.groups.selected < len(m.groups.items)-1 {
+			m.clearStaleErrorStatus()
+			m.groups.errorValue = ""
 			m.groups.selected++
 		}
 		return m, nil
 	case "a":
+		m.clearStaleErrorStatus()
 		m.groups.inputMode = groupInputCreate
 		m.groups.input.Focus()
 		m.groups.input.SetValue("")
@@ -100,6 +95,7 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groups.errorValue = m.translator.T("group.system_item_locked")
 			return m, nil
 		}
+		m.clearStaleErrorStatus()
 		m.groups.inputMode = groupInputRename
 		m.groups.input.Focus()
 		m.groups.input.SetValue(item.Name)
@@ -111,13 +107,17 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.groups.errorValue = m.translator.T("group.system_item_locked")
 			return m, nil
 		}
-		m.groups.confirming = true
+		m.clearStaleErrorStatus()
+		m.groups.errorValue = ""
+		m.openDeleteGroupConfirm(*item)
 		return m, nil
 	case "enter":
 		item := m.selectedGroup()
 		if item == nil {
 			return m, nil
 		}
+		m.clearStaleErrorStatus()
+		m.groups.errorValue = ""
 		if m.groups.mode == groupPanelMove {
 			m.overlay = overlayNone
 			var groupID *int64
@@ -184,14 +184,14 @@ func (m *Model) viewGroupPanel() string {
 		}
 		lines = append(lines, "", styles.FieldLabel.Render(label), m.groups.input.View())
 	}
-	if m.groups.confirming {
+	if m.hasActiveConfirm(confirmActionDeleteGroup) {
 		lines = append(lines, "",
-			styles.PageTitle.Render(m.translator.T("group.delete_title")),
-			styles.SubtleText.Render(m.translator.T("group.delete_desc", m.selectedGroupName())),
+			styles.PageTitle.Render(m.confirm.title),
+			styles.SubtleText.Render(m.confirm.description),
 			"",
 			localizedShortcutHelpWidth(m.translator, m.theme, tableWidth,
 				"enter/y", "group.shortcut_confirm",
-				"n", "group.shortcut_cancel",
+				"esc/n", "group.shortcut_cancel",
 				"q", "group.shortcut_close",
 			),
 		)
@@ -205,7 +205,7 @@ func (m *Model) viewGroupPanel() string {
 		"a", "group.shortcut_create",
 		"r", "group.shortcut_rename",
 		"d", "group.shortcut_delete",
-		"q", "group.shortcut_close",
+		"esc/q", "group.shortcut_close",
 	))
 	return styles.Dialog.Width(44).Render(strings.Join(lines, "\n"))
 }

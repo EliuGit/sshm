@@ -48,7 +48,7 @@ type Model struct {
 	groups  groupPanelState
 	imports importState
 
-	deleteTarget int64
+	confirm confirmState
 }
 
 func NewModel(services *app.Services, translator *i18n.Translator, startupDir string, defaultPrivateKeyPath string) *Model {
@@ -102,23 +102,48 @@ func (m *Model) setErrorStatus(err error) {
 	m.statusSuccess = false
 }
 
+func (m *Model) clearStaleErrorStatus() {
+	if m.err == nil {
+		return
+	}
+	m.err = nil
+	m.statusSuccess = false
+	switch m.page {
+	case pageBrowser:
+		if m.browser.localPanel.loading || m.browser.remotePanel.loading {
+			m.status = m.translator.T("status.loading_browser")
+			return
+		}
+		m.status = m.translator.T("status.browser_ready")
+	case pageHome:
+		m.status = m.homeReadyStatus()
+	default:
+		m.status = m.translator.T("status.ready")
+	}
+}
+
+func (m *Model) homeReadyStatus() string {
+	if len(m.connections) == 0 {
+		if strings.TrimSpace(m.search) != "" {
+			return m.translator.T("status.no_matches")
+		}
+		return m.translator.T("status.no_connections")
+	}
+	if strings.TrimSpace(m.search) != "" {
+		return m.translator.T("status.found_connections", len(m.connections))
+	}
+	return m.translator.T("status.connections_ready", len(m.connections))
+}
+
 func (m *Model) applyConnectionsLoaded(items []Connection) {
 	m.connections = items
 	m.selected = clamp(m.selected, len(m.connections))
 	if len(m.connections) == 0 {
 		m.selected = 0
-		if strings.TrimSpace(m.search) != "" {
-			m.setInfoStatus(m.translator.T("status.no_matches"))
-			return
-		}
-		m.setInfoStatus(m.translator.T("status.no_connections"))
+		m.setInfoStatus(m.homeReadyStatus())
 		return
 	}
-	if strings.TrimSpace(m.search) != "" {
-		m.setInfoStatus(m.translator.T("status.found_connections", len(m.connections)))
-		return
-	}
-	m.setInfoStatus(m.translator.T("status.connections_ready", len(m.connections)))
+	m.setInfoStatus(m.homeReadyStatus())
 }
 
 func (m *Model) applyLoadedBrowserPanel(panel *filePanel, items []domain.FileEntry, path string, selectName string) {
@@ -156,7 +181,6 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.groups.items = msg.items
 		m.groups.selected = clamp(m.groups.selected, len(m.groups.items))
-		m.err = nil
 	case groupOpDoneMsg:
 		if msg.err != nil {
 			m.setErrorStatus(msg.err)

@@ -13,20 +13,11 @@ import (
 
 func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if m.overlay == overlayDelete {
-			switch keyMsg.String() {
-			case "y", "enter":
-				id := m.deleteTarget
-				m.overlay = overlayNone
-				m.deleteTarget = 0
-				return m, m.deleteConnectionCmd(id)
-			case "n", "esc", "q":
-				m.overlay = overlayNone
-				m.deleteTarget = 0
-				m.setInfoStatus(m.translator.T("status.delete_cancelled"))
-				return m, nil
+		if m.hasActiveConfirm(confirmActionDeleteConnection) {
+			next, cmd, handled := m.handleConfirmKey(keyMsg)
+			if handled {
+				return next, cmd
 			}
-			return m, nil
 		}
 		if m.overlay == overlayHelp {
 			switch keyMsg.String() {
@@ -80,6 +71,7 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "?":
+			m.clearStaleErrorStatus()
 			m.overlay = overlayHelp
 			return m, nil
 		case "/":
@@ -106,20 +98,24 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "up", "k":
 			if m.selected > 0 {
+				m.clearStaleErrorStatus()
 				m.selected--
 			}
 			return m, nil
 		case "down", "j":
 			if m.selected < len(m.connections)-1 {
+				m.clearStaleErrorStatus()
 				m.selected++
 			}
 			return m, nil
 		case "ctrl+n":
+			m.clearStaleErrorStatus()
 			m.page = pageForm
 			m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.theme)
 			return m, tea.ClearScreen
 		case "ctrl+e":
 			if conn := m.currentConnection(); conn != nil {
+				m.clearStaleErrorStatus()
 				m.page = pageForm
 				m.form = newFormState(conn, m.translator, m.defaultPrivateKeyPath, m.theme)
 				return m, tea.ClearScreen
@@ -127,17 +123,19 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+d":
 			if conn := m.currentConnection(); conn != nil {
-				m.overlay = overlayDelete
-				m.deleteTarget = conn.ID
+				m.clearStaleErrorStatus()
+				m.openDeleteConnectionConfirm(conn.ID)
 			}
 			return m, nil
 		case "g":
+			m.clearStaleErrorStatus()
 			m.groups = newGroupPanelState(m.translator, m.theme)
 			m.groups.mode = groupPanelFilter
 			m.overlay = overlayGroup
 			return m, m.loadGroupsCmd()
 		case "ctrl+g":
 			if conn := m.currentConnection(); conn != nil {
+				m.clearStaleErrorStatus()
 				m.groups = newGroupPanelState(m.translator, m.theme)
 				m.groups.mode = groupPanelMove
 				m.groups.targetID = conn.ID
@@ -146,6 +144,7 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		case "i":
+			m.clearStaleErrorStatus()
 			m.page = pageImport
 			m.imports = newImportState(m.translator, m.theme)
 			return m, tea.ClearScreen
@@ -203,9 +202,9 @@ func (m *Model) viewHome() string {
 	}, "\n")
 	if m.overlay == overlayDelete {
 		dialog := styles.Dialog.Width(44).Render(strings.Join([]string{
-			styles.PageTitle.Render(m.translator.T("home.delete_title")),
+			styles.PageTitle.Render(m.confirm.title),
 			"",
-			styles.SubtleText.Render(m.translator.T("home.delete_desc")),
+			styles.SubtleText.Render(m.confirm.description),
 			"",
 			styles.MutedText.Render(m.translator.T("home.delete_keys", styles.Keycap.Render("esc"), styles.Keycap.Render("enter"), styles.Keycap.Render("y"))),
 		}, "\n"))
