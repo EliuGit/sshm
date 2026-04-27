@@ -3,15 +3,15 @@ package sqlite
 import (
 	"database/sql"
 	"path/filepath"
-	"testing"
 	"sshm/internal/domain"
+	"testing"
 )
 
 func TestOpenMigratesConnectionGroupColumn(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join(t.TempDir(), "old.db")
-	db, err := sql.Open("sqlite3", path)
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatalf("sql.Open() error = %v", err)
 	}

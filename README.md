@@ -23,7 +23,7 @@
 - Go `1.23+`
 - 可交互终端环境
 - 可访问的 SSH 目标主机
-- 支持 CGO 的本地 C 编译工具链（项目依赖 `github.com/mattn/go-sqlite3`）
+- 无需额外 C 编译工具链
 
 ## 快速开始
 
@@ -190,8 +190,9 @@ go build -trimpath -ldflags "-X sshm/internal/buildinfo.Version=v0.1.0" .
 - 输入 `version`：必须包含 `v` 前缀，例如 `v0.1.0`
 - 输入 `git_ref`：默认 `master`
 - 当前产物：
-  - `linux-musl-amd64`
+  - `linux-amd64`
   - `darwin-amd64`
+  - `darwin-arm64`
   - `windows-amd64`
 
 ## 已知限制

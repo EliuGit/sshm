@@ -3,11 +3,11 @@ package sqlite
 import (
 	"database/sql"
 	"fmt"
+	"sshm/internal/domain"
 	"strings"
 	"time"
-	"sshm/internal/domain"
 
-	_ "github.com/mattn/go-sqlite3"
+	_ "modernc.org/sqlite"
 )
 
 type Repository struct {
@@ -15,7 +15,7 @@ type Repository struct {
 }
 
 func Open(path string) (*Repository, error) {
-	db, err := sql.Open("sqlite3", path)
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, err
 	}

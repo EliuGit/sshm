@@ -28,16 +28,22 @@ jobs:
       matrix:
         include:
           - runner: ubuntu-latest
-            target_name: linux-musl-amd64
+            target_name: linux-amd64
             goos: linux
             goarch: amd64
-            artifact_name: release-linux-musl-amd64
+            artifact_name: release-linux-amd64
             binary_name: sshm
-          - runner: macos-13
+          - runner: ubuntu-latest
             target_name: darwin-amd64
             goos: darwin
             goarch: amd64
             artifact_name: release-darwin-amd64
+            binary_name: sshm
+          - runner: ubuntu-latest
+            target_name: darwin-arm64
+            goos: darwin
+            goarch: arm64
+            artifact_name: release-darwin-arm64
             binary_name: sshm
           - runner: windows-latest
             target_name: windows-amd64
@@ -58,86 +64,51 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: 安装 Linux musl 构建依赖
-        if: matrix.goos == 'linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential musl-tools
-
-      - name: 安装 Windows 构建依赖
-        if: matrix.goos == 'windows'
-        uses: msys2/setup-msys2@v2
-        with:
-          update: true
-          msystem: MINGW64
-          install: mingw-w64-x86_64-gcc zip
-          path-type: inherit
-
       - name: 输出 Linux 环境信息
         if: matrix.goos == 'linux'
         shell: bash
         run: |
           go version
-          gcc --version
-          musl-gcc --version
 
       - name: 输出 Windows 环境信息
         if: matrix.goos == 'windows'
         shell: pwsh
         run: |
           go version
-          gcc --version
-
-      - name: 输出 macOS 环境信息
-        if: matrix.goos == 'darwin'
-        shell: bash
-        run: |
-          go version
-          clang --version
 
       - name: 运行 Linux 测试
         if: matrix.goos == 'linux'
         shell: bash
         env:
-          CGO_ENABLED: "1"
-          CC: musl-gcc
+          CGO_ENABLED: "0"
         run: go test ./...
 
       - name: 运行 Windows 测试
         if: matrix.goos == 'windows'
         shell: pwsh
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
         run: go test ./...
 
-      - name: 运行 macOS 测试
-        if: matrix.goos == 'darwin'
-        shell: bash
-        env:
-          CGO_ENABLED: "1"
-        run: go test ./...
-
-      - name: 构建 Linux musl 二进制
+      - name: 构建 Linux 二进制
         if: matrix.goos == 'linux'
         shell: bash
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: linux
           GOARCH: amd64
-          CC: musl-gcc
         run: |
           mkdir -p dist
           go build \
             -trimpath \
-            -tags 'osusergo,netgo' \
-            -ldflags '-linkmode external -extldflags "-static" -X sshm/internal/buildinfo.Version=${{ inputs.version }}' \
+            -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
             -o "dist/${{ matrix.binary_name }}" .
 
       - name: 构建 Windows 二进制
         if: matrix.goos == 'windows'
         shell: pwsh
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: windows
           GOARCH: amd64
         run: |
@@ -149,7 +120,7 @@ jobs:
         if: matrix.goos == 'darwin'
         shell: bash
         env:
-          CGO_ENABLED: "1"
+          CGO_ENABLED: "0"
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
         run: |
@@ -159,11 +130,11 @@ jobs:
             -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
             -o "dist/${{ matrix.binary_name }}" .
 
-      - name: 打包 Linux musl 产物
+      - name: 打包 Linux 产物
         if: matrix.goos == 'linux'
         shell: bash
         run: |
-          archive="sshm_${{ inputs.version }}_linux_musl_amd64.tar.gz"
+          archive="sshm_${{ inputs.version }}_linux_amd64.tar.gz"
           tar -C dist -czf "dist/${archive}" sshm
 
       - name: 打包 macOS 产物
