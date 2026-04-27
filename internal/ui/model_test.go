@@ -95,7 +95,7 @@ func newModelWithProbeServices(t *testing.T, probeErr error) *Model {
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
-	model.connections = []Connection{created}
+	model.home.connections = []Connection{created}
 	return model
 }
 
@@ -115,8 +115,8 @@ func TestNewModelUsesRuntimeDefaults(t *testing.T) {
 	if model.form.privateKeyPath.Value() != "~/.ssh/id_ed25519" {
 		t.Fatalf("privateKeyPath = %q", model.form.privateKeyPath.Value())
 	}
-	if model.searchInput.Placeholder != "搜索名称 / 主机 / 用户 / 描述" {
-		t.Fatalf("placeholder = %q", model.searchInput.Placeholder)
+	if model.home.searchInput.Placeholder != "搜索名称 / 主机 / 用户 / 描述" {
+		t.Fatalf("placeholder = %q", model.home.searchInput.Placeholder)
 	}
 }
 
@@ -158,9 +158,9 @@ func TestConnectionListTitleDoesNotRepeatFilter(t *testing.T) {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.listScope = domain.ConnectionListScopeGroup
-	model.listGroup = "生产环境"
-	model.search = "web"
+	model.home.listScope = domain.ConnectionListScopeGroup
+	model.home.listGroup = "生产环境"
+	model.home.search = "web"
 
 	title := model.viewConnectionListTitle()
 	if !strings.Contains(title, "(生产环境)") {
@@ -200,11 +200,11 @@ func TestHomeSearchBlurredValueUsesHighlightColor(t *testing.T) {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.searchInput.SetValue("prod")
+	model.home.searchInput.SetValue("prod")
 
 	model.viewHomeSearch(32)
-	if fmt.Sprint(model.searchInput.TextStyle.GetForeground()) != fmt.Sprint(model.theme.Styles.SearchValueBlurred.GetForeground()) {
-		t.Fatalf("text color = %v, want %v", model.searchInput.TextStyle.GetForeground(), model.theme.Styles.SearchValueBlurred.GetForeground())
+	if fmt.Sprint(model.home.searchInput.TextStyle.GetForeground()) != fmt.Sprint(model.theme.Styles.SearchValueBlurred.GetForeground()) {
+		t.Fatalf("text color = %v, want %v", model.home.searchInput.TextStyle.GetForeground(), model.theme.Styles.SearchValueBlurred.GetForeground())
 	}
 }
 
@@ -216,12 +216,12 @@ func TestHomeSearchFocusedValueKeepsDefaultColor(t *testing.T) {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.searchMode = true
-	model.searchInput.SetValue("prod")
+	model.home.searchMode = true
+	model.home.searchInput.SetValue("prod")
 
 	model.viewHomeSearch(32)
-	if fmt.Sprint(model.searchInput.TextStyle.GetForeground()) != fmt.Sprint(lipgloss.NewStyle().GetForeground()) {
-		t.Fatalf("text color = %v, want default empty style", model.searchInput.TextStyle.GetForeground())
+	if fmt.Sprint(model.home.searchInput.TextStyle.GetForeground()) != fmt.Sprint(lipgloss.NewStyle().GetForeground()) {
+		t.Fatalf("text color = %v, want default empty style", model.home.searchInput.TextStyle.GetForeground())
 	}
 }
 
@@ -312,8 +312,8 @@ func TestGroupsLoadedKeepsExistingErrorStatus(t *testing.T) {
 	if got.status != "连接失败" {
 		t.Fatalf("status = %q, want preserved error text", got.status)
 	}
-	if got.renderStatus() != got.theme.Styles.ErrorText.Render("连接失败") {
-		t.Fatalf("renderStatus() = %q, want error style", got.renderStatus())
+	if !strings.Contains(got.renderStatus(), "连接失败") {
+		t.Fatalf("renderStatus() = %q, want error text", got.renderStatus())
 	}
 	if len(got.groups.items) != 2 {
 		t.Fatalf("group items = %d, want 2", len(got.groups.items))
@@ -329,7 +329,7 @@ func TestHomeFurtherActionClearsStaleErrorStatus(t *testing.T) {
 	}
 
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.connections = []Connection{
+	model.home.connections = []Connection{
 		{ID: 1, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22},
 		{ID: 2, Name: "stage", Username: "root", Host: "10.0.0.2", Port: 22},
 	}
@@ -344,8 +344,8 @@ func TestHomeFurtherActionClearsStaleErrorStatus(t *testing.T) {
 	if got.status != translator.T("status.connections_ready", 2) {
 		t.Fatalf("status = %q, want ready status", got.status)
 	}
-	if got.selected != 1 {
-		t.Fatalf("selected = %d, want 1", got.selected)
+	if got.home.selected != 1 {
+		t.Fatalf("selected = %d, want 1", got.home.selected)
 	}
 }
 
@@ -408,6 +408,35 @@ func TestRenderConnectionRowUsesTwoLinesWithoutPort(t *testing.T) {
 	}
 }
 
+func TestRenderConnectionRowDoesNotShowAuthOrGroup(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	groupID := int64(1)
+
+	row := model.renderConnectionRow(Connection{
+		Name:           "prod",
+		Username:       "root",
+		Host:           "10.0.0.1",
+		Port:           22,
+		AuthType:       domain.AuthTypePrivateKey,
+		GroupID:        &groupID,
+		GroupName:      "生产环境",
+		PrivateKeyPath: "~/.ssh/id_rsa",
+	}, false, 36)
+
+	if strings.Contains(row, "私钥") || strings.Contains(row, "密码") {
+		t.Fatalf("row = %q, want no auth info", row)
+	}
+	if strings.Contains(row, "生产环境") {
+		t.Fatalf("row = %q, want no group info", row)
+	}
+}
+
 func TestViewConnectionListUsesTwoLineViewport(t *testing.T) {
 	t.Parallel()
 
@@ -416,7 +445,7 @@ func TestViewConnectionListUsesTwoLineViewport(t *testing.T) {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.connections = []Connection{
+	model.home.connections = []Connection{
 		{Name: "one", Username: "root", Host: "10.0.0.1", Port: 22},
 		{Name: "two", Username: "root", Host: "10.0.0.2", Port: 22},
 		{Name: "three", Username: "root", Host: "10.0.0.3", Port: 22},
@@ -431,6 +460,34 @@ func TestViewConnectionListUsesTwoLineViewport(t *testing.T) {
 	}
 }
 
+func TestHomeViewFitsViewportWidth(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.width = 80
+	model.height = 24
+	model.home.connections = []Connection{{
+		Name:           "production-app-server",
+		Username:       "root",
+		Host:           "113.249.104.116",
+		Port:           22,
+		AuthType:       domain.AuthTypePrivateKey,
+		PrivateKeyPath: "~/.ssh/id_rsa",
+		Description:    "这是一个很长的描述，用来验证详情区域在较窄窗口中不会把宽度撑出边界。",
+	}}
+
+	view := model.viewHome()
+	for _, line := range strings.Split(view, "\n") {
+		if lipgloss.Width(line) > model.width {
+			t.Fatalf("line width = %d, want <= %d: %q", lipgloss.Width(line), model.width, line)
+		}
+	}
+}
+
 func TestHomeShortcutsUseLowercaseKeys(t *testing.T) {
 	t.Parallel()
 
@@ -441,7 +498,6 @@ func TestHomeShortcutsUseLowercaseKeys(t *testing.T) {
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
 
 	help := model.viewHomeHelp()
-	footer := model.viewHomeFooter(500)
 	for _, shortcut := range homeShortcuts() {
 		if strings.ToLower(shortcut.key) != shortcut.key {
 			t.Fatalf("shortcut key = %q, want lowercase", shortcut.key)
@@ -449,9 +505,52 @@ func TestHomeShortcutsUseLowercaseKeys(t *testing.T) {
 		if !strings.Contains(help, shortcut.key) {
 			t.Fatalf("help = %q, want shortcut %q", help, shortcut.key)
 		}
+	}
+
+	footer := model.viewHomeFooter(500)
+	for _, shortcut := range homeFooterShortcuts() {
 		if !strings.Contains(footer, shortcut.key) {
 			t.Fatalf("footer = %q, want shortcut %q", footer, shortcut.key)
 		}
+	}
+	for _, key := range []string{"c-e", "c-d", "c-g"} {
+		if strings.Contains(footer, key) {
+			t.Fatalf("footer = %q, want focused shortcuts without %q", footer, key)
+		}
+	}
+}
+
+func TestHomePaletteOpensAndCanRunCreateAction(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	updated, _ := model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlP})
+	got := updated.(*Model)
+	if got.overlay != overlayCommandPalette {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayCommandPalette)
+	}
+
+	updated, _ = got.updateHome(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'创'}})
+	got = updated.(*Model)
+	if got.palette.input.Value() != "创" {
+		t.Fatalf("palette query = %q, want 创", got.palette.input.Value())
+	}
+
+	updated, cmd := got.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
+	got = updated.(*Model)
+	if got.page != pageForm {
+		t.Fatalf("page = %v, want %v", got.page, pageForm)
+	}
+	if got.overlay != overlayNone {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want clear screen command")
 	}
 }
 
@@ -522,7 +621,7 @@ func TestHomeCtrlShortcutsNoLongerAcceptSingleKeys(t *testing.T) {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.connections = []Connection{{ID: 7, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22}}
+	model.home.connections = []Connection{{ID: 7, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22}}
 
 	for _, key := range []rune{'a', 'e', 'd', 'o'} {
 		updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{key}})
@@ -549,7 +648,7 @@ func TestHomeCtrlShortcutsStillWork(t *testing.T) {
 	}
 
 	model = NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.connections = []Connection{{ID: 7, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22}}
+	model.home.connections = []Connection{{ID: 7, Name: "prod", Username: "root", Host: "10.0.0.1", Port: 22}}
 	updated, _ = model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlD})
 	got = updated.(*Model)
 	if got.overlay != overlayDelete || got.confirm.action != confirmActionDeleteConnection || got.confirm.connectionID != 7 {
@@ -557,7 +656,7 @@ func TestHomeCtrlShortcutsStillWork(t *testing.T) {
 	}
 
 	model = NewModel(nil, translator, "", "~/.ssh/id_rsa")
-	model.connections = []Connection{{ID: 9, Name: "stage", Username: "root", Host: "10.0.0.2", Port: 22}}
+	model.home.connections = []Connection{{ID: 9, Name: "stage", Username: "root", Host: "10.0.0.2", Port: 22}}
 	updated, cmd = model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlG})
 	got = updated.(*Model)
 	if got.overlay != overlayGroup || got.groups.mode != groupPanelMove || got.groups.targetID != 9 || cmd == nil {
@@ -572,7 +671,7 @@ func TestHomeEnterStartsShellProbe(t *testing.T) {
 
 	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(*Model)
-	if !got.connecting {
+	if !got.home.connecting {
 		t.Fatal("connecting = false, want true")
 	}
 	if got.Result().ShellSession != nil {
@@ -602,7 +701,7 @@ func TestShellProbeFailureStaysOnHomeAndShowsError(t *testing.T) {
 	t.Parallel()
 
 	model := newModelWithProbeServices(t, errors.New("auth failed"))
-	model.selected = 0
+	model.home.selected = 0
 
 	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -618,11 +717,11 @@ func TestShellProbeFailureStaysOnHomeAndShowsError(t *testing.T) {
 	if got.page != pageHome {
 		t.Fatalf("page = %v, want %v", got.page, pageHome)
 	}
-	if got.connecting {
+	if got.home.connecting {
 		t.Fatal("connecting = true, want false")
 	}
-	if got.selected != 0 {
-		t.Fatalf("selected = %d, want 0", got.selected)
+	if got.home.selected != 0 {
+		t.Fatalf("selected = %d, want 0", got.home.selected)
 	}
 	if got.err == nil {
 		t.Fatal("err = nil, want error status")
@@ -673,7 +772,7 @@ func TestHomeCtrlOStartsBrowserProbe(t *testing.T) {
 
 	updated, cmd := model.updateHome(tea.KeyMsg{Type: tea.KeyCtrlO})
 	got := updated.(*Model)
-	if !got.connecting {
+	if !got.home.connecting {
 		t.Fatal("connecting = false, want true")
 	}
 	if got.page != pageHome {
@@ -717,7 +816,7 @@ func TestBrowserProbeFailureStaysOnHomeAndShowsError(t *testing.T) {
 	if got.page != pageHome {
 		t.Fatalf("page = %v, want %v", got.page, pageHome)
 	}
-	if got.connecting {
+	if got.home.connecting {
 		t.Fatal("connecting = true, want false")
 	}
 	want := got.translator.T("status.browser_connect_failed", "prod", "host unreachable")
@@ -745,7 +844,7 @@ func TestBrowserProbeSuccessOpensBrowser(t *testing.T) {
 	if got.page != pageBrowser {
 		t.Fatalf("page = %v, want %v", got.page, pageBrowser)
 	}
-	if got.connecting {
+	if got.home.connecting {
 		t.Fatal("connecting = true, want false")
 	}
 	if got.browser.connectionID == 0 || got.browser.connection.Name != "prod" {
@@ -800,25 +899,25 @@ func TestGroupFilterSelectionClearsSearch(t *testing.T) {
 		{ID: 1, Name: "生产环境"},
 	}
 	model.groups.selected = 1
-	model.search = "prod"
-	model.searchMode = true
-	model.searchInput.SetValue("prod")
+	model.home.search = "prod"
+	model.home.searchMode = true
+	model.home.searchInput.SetValue("prod")
 
 	updated, cmd := model.updateGroupPanel(tea.KeyMsg{Type: tea.KeyEnter})
 	got := updated.(*Model)
 	if got.overlay != overlayNone {
 		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
 	}
-	if got.listScope != domain.ConnectionListScopeGroup || got.listGroupID != 1 || got.listGroup != "生产环境" {
-		t.Fatalf("scope=%v groupID=%d group=%q", got.listScope, got.listGroupID, got.listGroup)
+	if got.home.listScope != domain.ConnectionListScopeGroup || got.home.listGroupID != 1 || got.home.listGroup != "生产环境" {
+		t.Fatalf("scope=%v groupID=%d group=%q", got.home.listScope, got.home.listGroupID, got.home.listGroup)
 	}
-	if got.search != "" {
-		t.Fatalf("search = %q, want empty", got.search)
+	if got.home.search != "" {
+		t.Fatalf("search = %q, want empty", got.home.search)
 	}
-	if got.searchInput.Value() != "" {
-		t.Fatalf("searchInput = %q, want empty", got.searchInput.Value())
+	if got.home.searchInput.Value() != "" {
+		t.Fatalf("searchInput = %q, want empty", got.home.searchInput.Value())
 	}
-	if got.searchMode {
+	if got.home.searchMode {
 		t.Fatalf("searchMode = true, want false")
 	}
 	if cmd == nil {

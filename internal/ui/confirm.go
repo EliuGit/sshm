@@ -30,7 +30,7 @@ func (m *Model) openDeleteGroupConfirm(item domain.ConnectionGroupListItem) {
 		title:            m.translator.T("group.delete_title"),
 		description:      m.translator.T("group.delete_desc", item.Name),
 		groupID:          item.ID,
-		clearGroupFilter: m.listScope == domain.ConnectionListScopeGroup && m.listGroupID == item.ID,
+		clearGroupFilter: m.home.listScope == domain.ConnectionListScopeGroup && m.home.listGroupID == item.ID,
 	}
 }
 

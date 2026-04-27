@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 )
 
 type closeTrackingSession struct {
@@ -58,8 +59,202 @@ func TestBrowserEscClearsActiveFilter(t *testing.T) {
 	if got.browser.localPanel.filter != "" {
 		t.Fatalf("filter = %q, want empty", got.browser.localPanel.filter)
 	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want no reload command", cmd)
+	}
+}
+
+func TestBrowserFilterInputEscClearsFilter(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.filter = "log"
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "logs", Path: `C:\work\project\logs`, IsDir: true, Panel: domain.LocalPanel},
+	}
+	model.overlay = overlayBrowserInput
+	model.browser.inputMode = browserInputFilter
+	model.browser.input.SetValue("lo")
+
+	updated, cmd := model.updateBrowser(tea.KeyMsg{Type: tea.KeyEsc})
+	got := updated.(*Model)
+
+	if got.overlay != overlayNone {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
+	}
+	if got.browser.localPanel.filter != "" {
+		t.Fatalf("filter = %q, want empty", got.browser.localPanel.filter)
+	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+}
+
+func TestBrowserFilterInputUpdatesLocalPanelInRealTime(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(&app.Services{Files: &app.FileService{}}, translator, t.TempDir(), "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = t.TempDir()
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "logs", Path: `C:\work\project\logs`, IsDir: true, Panel: domain.LocalPanel},
+		{Name: "app.txt", Path: `C:\work\project\app.txt`, Panel: domain.LocalPanel},
+	}
+
+	updated, _ := model.openBrowserFilterInput()
+	got := updated.(*Model)
+	updated, _ = got.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	got = updated.(*Model)
+
+	if got.overlay != overlayBrowserInput {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayBrowserInput)
+	}
+	if got.browser.localPanel.filter != "l" {
+		t.Fatalf("filter = %q, want %q", got.browser.localPanel.filter, "l")
+	}
+	if got.browser.localPanel.loading {
+		t.Fatal("localPanel.loading = true, want cached filter without reload")
+	}
+	if len(got.browser.localPanel.rows()) != 2 {
+		t.Fatalf("rows = %d, want parent + matched item", len(got.browser.localPanel.rows()))
+	}
+}
+
+func TestBrowserFilterInputUpdatesRemotePanelInRealTime(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.activePanel = domain.RemotePanel
+	model.browser.remotePanel.path = "/var/log"
+	model.browser.session = &closeTrackingSession{}
+	model.browser.remotePanel.items = []domain.FileEntry{
+		{Name: "app.log", Path: "/var/log/app.log", Panel: domain.RemotePanel},
+		{Name: "syslog", Path: "/var/log/syslog", Panel: domain.RemotePanel},
+	}
+
+	updated, _ := model.openBrowserFilterInput()
+	got := updated.(*Model)
+	updated, _ = got.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	got = updated.(*Model)
+
+	if got.overlay != overlayBrowserInput {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayBrowserInput)
+	}
+	if got.browser.remotePanel.filter != "a" {
+		t.Fatalf("filter = %q, want %q", got.browser.remotePanel.filter, "a")
+	}
+	if got.browser.remotePanel.loading {
+		t.Fatal("remotePanel.loading = true, want cached filter without reload")
+	}
+	if len(got.browser.remotePanel.rows()) != 2 {
+		t.Fatalf("rows = %d, want parent + matched item", len(got.browser.remotePanel.rows()))
+	}
+}
+
+func TestBrowserPathChangeClearsFilter(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.filter = "log"
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "logs", Path: `C:\work\project\logs`, IsDir: true, Panel: domain.LocalPanel},
+	}
+
+	updated, cmd := model.openActiveBrowserSelection()
+	got := updated.(*Model)
+
+	if got.browser.localPanel.filter != "" {
+		t.Fatalf("filter = %q, want cleared on path change", got.browser.localPanel.filter)
+	}
+	if !got.browser.localPanel.loading {
+		t.Fatal("localPanel.loading = false, want true")
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want navigation reload command")
+	}
+}
+
+func TestBrowserRefreshSamePathKeepsFilter(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.filter = "log"
+
+	cmd := model.navigateBrowserPath(domain.LocalPanel, `C:\work\project`)
+	if model.browser.localPanel.filter != "log" {
+		t.Fatalf("filter = %q, want preserved on same path", model.browser.localPanel.filter)
+	}
 	if cmd == nil {
 		t.Fatal("cmd = nil, want reload command")
+	}
+}
+
+func TestBrowserIgnoresStaleRemoteLoadResult(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.remotePanel.request = 2
+	model.browser.remotePanel.loading = true
+	model.browser.remotePanel.filter = "new"
+
+	updated, _ := model.Update(remoteLoadedMsg{
+		request: 1,
+		path:    "/var/log",
+		items: []domain.FileEntry{
+			{Name: "old.log", Path: "/var/log/old.log", Panel: domain.RemotePanel},
+		},
+	})
+	got := updated.(*Model)
+
+	if !got.browser.remotePanel.loading {
+		t.Fatal("remotePanel.loading = false, want still loading for newer request")
+	}
+	if len(got.browser.remotePanel.items) != 0 {
+		t.Fatalf("items = %#v, want stale result ignored", got.browser.remotePanel.items)
+	}
+	if got.browser.remotePanel.filter != "new" {
+		t.Fatalf("filter = %q, want unchanged", got.browser.remotePanel.filter)
 	}
 }
 
@@ -166,7 +361,7 @@ func TestBrowserOpConnectionErrorReturnsHomeAndClosesSession(t *testing.T) {
 	}
 }
 
-func TestRenderBrowserPanelShowsInlineFilterAndPath(t *testing.T) {
+func TestRenderBrowserPanelShowsInlineFilterWithoutPath(t *testing.T) {
 	t.Parallel()
 
 	translator, err := i18n.New("zh-CN")
@@ -186,8 +381,36 @@ func TestRenderBrowserPanelShowsInlineFilterAndPath(t *testing.T) {
 	if !strings.Contains(view, "（过滤：log）") {
 		t.Fatalf("view missing filter hint: %q", view)
 	}
-	if !strings.Contains(view, `C:\work\project`) {
-		t.Fatalf("view missing path: %q", view)
+	if strings.Contains(view, `C:\work\project`) {
+		t.Fatalf("view = %q, want path removed from header", view)
+	}
+}
+
+func TestRenderBrowserPanelUsesIcons(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	panel := filePanel{
+		panel: domain.LocalPanel,
+		title: translator.T("browser.local"),
+		path:  `C:\work\project`,
+		items: []domain.FileEntry{
+			{Name: "logs", Path: `C:\work\project\logs`, IsDir: true, Panel: domain.LocalPanel},
+			{Name: "app.log", Path: `C:\work\project\app.log`, Panel: domain.LocalPanel},
+		},
+	}
+
+	view := model.renderBrowserPanel(panel, 60, 8, true)
+	if !strings.Contains(view, "📁 logs/") {
+		t.Fatalf("view missing dir icon: %q", view)
+	}
+	if !strings.Contains(view, "📄 app.log") {
+		t.Fatalf("view missing file icon: %q", view)
 	}
 }
 
@@ -205,15 +428,18 @@ func TestBrowserFooterMatchesActiveShortcuts(t *testing.T) {
 	model.browser.activePanel = domain.LocalPanel
 	model.browser.localPanel.path = `C:\work\project`
 
-	footer := model.renderBrowserFooter(220, 8)
-	for _, key := range []string{"j/k", "enter/l", "h/backspace", "tab", "/", ":", "c-u", "c-d", "r", "g", "esc", "q"} {
+	footer := model.renderBrowserFooter(220)
+	for _, key := range []string{"enter/l", "tab", "c-u", "c-d", "c-p", "q"} {
 		if !strings.Contains(footer, key) {
 			t.Fatalf("footer = %q, want shortcut %q", footer, key)
 		}
 	}
+	if strings.Contains(footer, `C:\work\project`) {
+		t.Fatalf("footer = %q, want no path text", footer)
+	}
 }
 
-func TestBrowserConfirmFooterShowsSourceAndTarget(t *testing.T) {
+func TestBrowserConfirmDialogShowsSourceAndTarget(t *testing.T) {
 	t.Parallel()
 
 	translator, err := i18n.New("zh-CN")
@@ -234,12 +460,12 @@ func TestBrowserConfirmFooterShowsSourceAndTarget(t *testing.T) {
 	}
 	model.browser.pending = &browserTransfer{source: `C:\work\project\archive.log`}
 
-	footer := model.renderBrowserFooter(100, 8)
-	if !strings.Contains(footer, "来源：") || !strings.Contains(footer, `C:\work\project\archive.log`) {
-		t.Fatalf("footer = %q, want source path", footer)
+	dialog := model.viewBrowserOverwriteConfirm(100)
+	if !strings.Contains(dialog, "来源：") || !strings.Contains(dialog, `C:\work\project\archive.log`) {
+		t.Fatalf("dialog = %q, want source path", dialog)
 	}
-	if !strings.Contains(footer, "目标：") || !strings.Contains(footer, `/tmp/archive.log`) {
-		t.Fatalf("footer = %q, want target path", footer)
+	if !strings.Contains(dialog, "目标：") || !strings.Contains(dialog, `/tmp/archive.log`) {
+		t.Fatalf("dialog = %q, want target path", dialog)
 	}
 }
 
@@ -296,6 +522,44 @@ func TestBrowserConfirmEscCancelsOnlyConfirmState(t *testing.T) {
 	}
 	if got.status != translator.T("status.transfer_cancelled") {
 		t.Fatalf("status = %q, want cancelled", got.status)
+	}
+}
+
+func TestBrowserPaletteOpensAndCanSwitchPanel(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.theme)
+	model.browser.activePanel = domain.LocalPanel
+
+	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyCtrlP})
+	got := updated.(*Model)
+	if got.overlay != overlayCommandPalette {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayCommandPalette)
+	}
+
+	updated, _ = got.updateBrowser(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'切'}})
+	got = updated.(*Model)
+	if got.palette.input.Value() != "切" {
+		t.Fatalf("palette query = %q, want 切", got.palette.input.Value())
+	}
+
+	updated, cmd := got.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	got = updated.(*Model)
+	if got.browser.activePanel != domain.RemotePanel {
+		t.Fatalf("activePanel = %v, want %v", got.browser.activePanel, domain.RemotePanel)
+	}
+	if got.overlay != overlayNone {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayNone)
+	}
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
 	}
 }
 
@@ -395,5 +659,30 @@ func TestBrowserViewFitsViewportWidth(t *testing.T) {
 		if lipgloss.Width(line) > model.width {
 			t.Fatalf("line width = %d, want <= %d: %q", lipgloss.Width(line), model.width, line)
 		}
+	}
+}
+
+func TestBrowserStatusAndFooterRenderSeparately(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `D:\code\go\tssh`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.setInfoStatus(translator.T("status.browser_ready"))
+
+	status := ansi.Strip(model.renderStatusBar(60))
+	footer := ansi.Strip(model.renderBrowserFooter(60))
+	if !strings.Contains(status, "INFO") {
+		t.Fatalf("status = %q, want INFO label", status)
+	}
+	if !strings.Contains(footer, "enter/l") {
+		t.Fatalf("footer = %q, want browser shortcuts", footer)
+	}
+	if strings.Contains(footer, "INFO") {
+		t.Fatalf("footer = %q, want no status text in shortcut panel", footer)
 	}
 }

@@ -130,20 +130,20 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, m.moveConnectionGroupCmd(m.groups.targetID, groupID, targetName)
 		}
 		m.overlay = overlayNone
-		m.search = ""
-		m.searchMode = false
-		m.searchInput.Blur()
-		m.searchInput.SetValue("")
+		m.home.search = ""
+		m.home.searchMode = false
+		m.home.searchInput.Blur()
+		m.home.searchInput.SetValue("")
 		if item.Ungrouped {
-			m.listScope = domain.ConnectionListScopeUngrouped
-			m.listGroupID = 0
-			m.listGroup = m.translator.T("group.ungrouped")
+			m.home.listScope = domain.ConnectionListScopeUngrouped
+			m.home.listGroupID = 0
+			m.home.listGroup = m.translator.T("group.ungrouped")
 		} else {
-			m.listScope = domain.ConnectionListScopeGroup
-			m.listGroupID = item.ID
-			m.listGroup = item.Name
+			m.home.listScope = domain.ConnectionListScopeGroup
+			m.home.listGroupID = item.ID
+			m.home.listGroup = item.Name
 		}
-		m.selected = 0
+		m.home.selected = 0
 		return m, m.loadConnectionsCmd()
 	}
 	return m, nil

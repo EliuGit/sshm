@@ -9,6 +9,8 @@ type Theme struct {
 
 type ThemePalette struct {
 	Background                  lipgloss.Color
+	Surface                     lipgloss.Color
+	SurfaceSoft                 lipgloss.Color
 	PanelBorder                 lipgloss.Color
 	PanelBorderFocused          lipgloss.Color
 	DialogBorder                lipgloss.Color
@@ -32,10 +34,18 @@ type ThemePalette struct {
 	SearchHighlight             lipgloss.Color
 	KeyText                     lipgloss.Color
 	KeyBackground               lipgloss.Color
+	StatusInfoBackground        lipgloss.Color
+	StatusSuccessBackground     lipgloss.Color
+	StatusErrorBackground       lipgloss.Color
+	StatusText                  lipgloss.Color
+	BadgeText                   lipgloss.Color
+	BadgeBackground             lipgloss.Color
+	BadgeMutedBackground        lipgloss.Color
 }
 
 type ThemeStyles struct {
 	App                lipgloss.Style
+	Banner             lipgloss.Style
 	Panel              lipgloss.Style
 	FocusedPanel       lipgloss.Style
 	Dialog             lipgloss.Style
@@ -66,34 +76,49 @@ type ThemeStyles struct {
 	SearchBoxFocused   lipgloss.Style
 	PanelTitle         lipgloss.Style
 	PanelTitleFocused  lipgloss.Style
+	StatusBar          lipgloss.Style
+	StatusBarSuccess   lipgloss.Style
+	StatusBarError     lipgloss.Style
+	Badge              lipgloss.Style
+	BadgeMuted         lipgloss.Style
+	BadgeAccent        lipgloss.Style
 }
 
 func newDefaultTheme() Theme {
 	palette := ThemePalette{
 		Background:                  lipgloss.Color("233"),
-		PanelBorder:                 lipgloss.Color("240"),
-		PanelBorderFocused:          lipgloss.Color("81"),
-		DialogBorder:                lipgloss.Color("213"),
-		Title:                       lipgloss.Color("220"),
-		SectionTitle:                lipgloss.Color("81"),
-		Text:                        lipgloss.Color("252"),
-		SubtleText:                  lipgloss.Color("250"),
+		Surface:                     lipgloss.Color("235"),
+		SurfaceSoft:                 lipgloss.Color("237"),
+		PanelBorder:                 lipgloss.Color("239"),
+		PanelBorderFocused:          lipgloss.Color("44"),
+		DialogBorder:                lipgloss.Color("180"),
+		Title:                       lipgloss.Color("229"),
+		SectionTitle:                lipgloss.Color("151"),
+		Text:                        lipgloss.Color("254"),
+		SubtleText:                  lipgloss.Color("252"),
 		MutedText:                   lipgloss.Color("244"),
 		HelpText:                    lipgloss.Color("246"),
-		ShortcutLabel:               lipgloss.Color("250"),
-		Error:                       lipgloss.Color("203"),
-		Success:                     lipgloss.Color("42"),
-		Warning:                     lipgloss.Color("221"),
+		ShortcutLabel:               lipgloss.Color("251"),
+		Error:                       lipgloss.Color("210"),
+		Success:                     lipgloss.Color("157"),
+		Warning:                     lipgloss.Color("222"),
 		SelectionText:               lipgloss.Color("232"),
-		SelectionBackground:         lipgloss.Color("117"),
-		SelectionInactiveText:       lipgloss.Color("252"),
-		SelectionInactiveBackground: lipgloss.Color("239"),
+		SelectionBackground:         lipgloss.Color("115"),
+		SelectionInactiveText:       lipgloss.Color("254"),
+		SelectionInactiveBackground: lipgloss.Color("238"),
 		FieldLabel:                  lipgloss.Color("223"),
-		FieldLabelFocused:           lipgloss.Color("229"),
-		GroupScope:                  lipgloss.Color("213"),
-		SearchHighlight:             lipgloss.Color("220"),
-		KeyText:                     lipgloss.Color("81"),
-		KeyBackground:               lipgloss.Color("237"),
+		FieldLabelFocused:           lipgloss.Color("195"),
+		GroupScope:                  lipgloss.Color("186"),
+		SearchHighlight:             lipgloss.Color("222"),
+		KeyText:                     lipgloss.Color("230"),
+		KeyBackground:               lipgloss.Color("59"),
+		StatusInfoBackground:        lipgloss.Color("238"),
+		StatusSuccessBackground:     lipgloss.Color("29"),
+		StatusErrorBackground:       lipgloss.Color("88"),
+		StatusText:                  lipgloss.Color("255"),
+		BadgeText:                   lipgloss.Color("230"),
+		BadgeBackground:             lipgloss.Color("66"),
+		BadgeMutedBackground:        lipgloss.Color("239"),
 	}
 	return newTheme(palette)
 }
@@ -114,8 +139,13 @@ func newTheme(palette ThemePalette) Theme {
 
 	styles := ThemeStyles{
 		App: lipgloss.NewStyle().
-			Padding(1, 2).
+			Padding(0, 1).
 			Foreground(palette.Text),
+
+		Banner: lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(palette.PanelBorderFocused).
+			Padding(0, 1),
 
 		Panel: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
@@ -130,7 +160,7 @@ func newTheme(palette ThemePalette) Theme {
 		Dialog: lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
 			BorderForeground(palette.DialogBorder).
-			Padding(1, 2),
+			Padding(0, 1),
 
 		ActionBar: lipgloss.NewStyle().
 			BorderStyle(lipgloss.NormalBorder()).
@@ -190,6 +220,30 @@ func newTheme(palette ThemePalette) Theme {
 
 		PanelTitle:        subtle,
 		PanelTitleFocused: lipgloss.NewStyle().Bold(true).Foreground(palette.Title),
+		StatusBar: lipgloss.NewStyle().
+			Foreground(palette.StatusText).
+			Padding(0, 1),
+		StatusBarSuccess: lipgloss.NewStyle().
+			Foreground(palette.StatusText).
+			Padding(0, 1),
+		StatusBarError: lipgloss.NewStyle().
+			Foreground(palette.StatusText).
+			Padding(0, 1),
+		Badge: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(palette.BadgeText).
+			Background(palette.BadgeBackground).
+			Padding(0, 1),
+		BadgeMuted: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(palette.Text).
+			Background(palette.BadgeMutedBackground).
+			Padding(0, 1),
+		BadgeAccent: lipgloss.NewStyle().
+			Bold(true).
+			Foreground(palette.SelectionText).
+			Background(palette.SelectionBackground).
+			Padding(0, 1),
 	}
 
 	return Theme{

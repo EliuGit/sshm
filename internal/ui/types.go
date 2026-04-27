@@ -25,6 +25,7 @@ const (
 	overlayDelete
 	overlayHelp
 	overlayGroup
+	overlayCommandPalette
 	overlayBrowserInput
 	overlayBrowserConfirm
 )
@@ -69,6 +70,49 @@ const (
 
 type AppResult struct {
 	ShellSession app.RemoteSession
+}
+
+type shellState struct {
+	width  int
+	height int
+
+	page    page
+	overlay overlayKind
+
+	status        string
+	statusSuccess bool
+	err           error
+}
+
+type homeScreenState struct {
+	searchInput textinput.Model
+	search      string
+	searchMode  bool
+	listScope   domain.ConnectionListScope
+	listGroupID int64
+	listGroup   string
+
+	connections []Connection
+	selected    int
+	connecting  bool
+}
+
+type screenState struct {
+	home    homeScreenState
+	form    formState
+	browser browserState
+	imports importState
+}
+
+type overlayState struct {
+	groups  groupPanelState
+	confirm confirmState
+	palette commandPaletteState
+}
+
+type commandPaletteState struct {
+	input    textinput.Model
+	selected int
 }
 
 type formState struct {
@@ -141,6 +185,7 @@ type filePanel struct {
 	items   []domain.FileEntry
 	cursor  int
 	loading bool
+	request int
 }
 
 type confirmState struct {

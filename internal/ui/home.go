@@ -13,23 +13,10 @@ import (
 
 func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
-		if m.hasActiveConfirm(confirmActionDeleteConnection) {
-			next, cmd, handled := m.handleConfirmKey(keyMsg)
-			if handled {
-				return next, cmd
-			}
+		if next, cmd, handled := m.handleHomeOverlayKey(keyMsg); handled {
+			return next, cmd
 		}
-		if m.overlay == overlayHelp {
-			switch keyMsg.String() {
-			case "?", "esc", "q", "enter":
-				m.overlay = overlayNone
-			}
-			return m, nil
-		}
-		if m.overlay == overlayGroup {
-			return m.updateGroupPanel(keyMsg)
-		}
-		if m.connecting {
+		if m.home.connecting {
 			switch keyMsg.String() {
 			case "ctrl+c", "q":
 				return m, tea.Quit
@@ -37,31 +24,31 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		if m.searchMode {
+		if m.home.searchMode {
 			switch keyMsg.String() {
 			case "esc":
-				m.searchMode = false
-				m.searchInput.Blur()
+				m.home.searchMode = false
+				m.home.searchInput.Blur()
 				m.setInfoStatus(m.translator.T("status.search_ready"))
 				return m, nil
 			case "enter":
-				m.searchMode = false
-				m.searchInput.Blur()
-				if strings.TrimSpace(m.search) == "" {
+				m.home.searchMode = false
+				m.home.searchInput.Blur()
+				if strings.TrimSpace(m.home.search) == "" {
 					m.setInfoStatus(m.translator.T("status.search_cleared"))
 				} else {
-					m.setInfoStatus(m.translator.T("status.filtered_connections", len(m.connections)))
+					m.setInfoStatus(m.translator.T("status.filtered_connections", len(m.home.connections)))
 				}
 				return m, nil
 			}
 
 			var cmd tea.Cmd
-			before := m.searchInput.Value()
-			m.searchInput, cmd = m.searchInput.Update(keyMsg)
-			after := strings.TrimSpace(m.searchInput.Value())
+			before := m.home.searchInput.Value()
+			m.home.searchInput, cmd = m.home.searchInput.Update(keyMsg)
+			after := strings.TrimSpace(m.home.searchInput.Value())
 			if before != after {
-				m.search = after
-				m.selected = 0
+				m.home.search = after
+				m.home.selected = 0
 				return m, tea.Batch(cmd, m.loadConnectionsCmd())
 			}
 			return m, cmd
@@ -70,101 +57,50 @@ func (m *Model) updateHome(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch keyMsg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
+		case ":", "ctrl+p":
+			return m.openCommandPalette()
 		case "?":
 			m.clearStaleErrorStatus()
 			m.overlay = overlayHelp
 			return m, nil
 		case "/":
-			m.searchMode = true
-			m.searchInput.Focus()
-			m.setInfoStatus(m.translator.T("status.type_to_filter"))
-			return m, nil
+			return m.openHomeSearch()
 		case "esc":
-			if strings.TrimSpace(m.search) != "" {
-				m.search = ""
-				m.searchInput.SetValue("")
-				m.selected = 0
-				m.setInfoStatus(m.translator.T("status.search_cleared"))
-				return m, m.loadConnectionsCmd()
-			}
-			if m.listScope != domain.ConnectionListScopeAll {
-				m.listScope = domain.ConnectionListScopeAll
-				m.listGroupID = 0
-				m.listGroup = ""
-				m.selected = 0
-				m.setInfoStatus(m.translator.T("status.group_filter_cleared"))
-				return m, m.loadConnectionsCmd()
-			}
-			return m, nil
+			return m.clearHomeFilters()
 		case "up", "k":
-			if m.selected > 0 {
+			if m.home.selected > 0 {
 				m.clearStaleErrorStatus()
-				m.selected--
+				m.home.selected--
 			}
 			return m, nil
 		case "down", "j":
-			if m.selected < len(m.connections)-1 {
+			if m.home.selected < len(m.home.connections)-1 {
 				m.clearStaleErrorStatus()
-				m.selected++
+				m.home.selected++
 			}
 			return m, nil
 		case "ctrl+n":
-			m.clearStaleErrorStatus()
-			m.page = pageForm
-			m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.theme)
-			return m, tea.ClearScreen
+			return m.openHomeCreateForm()
 		case "ctrl+e":
-			if conn := m.currentConnection(); conn != nil {
-				m.clearStaleErrorStatus()
-				m.page = pageForm
-				m.form = newFormState(conn, m.translator, m.defaultPrivateKeyPath, m.theme)
-				return m, tea.ClearScreen
-			}
-			return m, nil
+			return m.openCurrentConnectionEdit()
 		case "ctrl+d":
-			if conn := m.currentConnection(); conn != nil {
-				m.clearStaleErrorStatus()
-				m.openDeleteConnectionConfirm(conn.ID)
-			}
-			return m, nil
+			return m.confirmCurrentConnectionDelete()
 		case "g":
-			m.clearStaleErrorStatus()
-			m.groups = newGroupPanelState(m.translator, m.theme)
-			m.groups.mode = groupPanelFilter
-			m.overlay = overlayGroup
-			return m, m.loadGroupsCmd()
+			return m.openHomeGroupFilter()
 		case "ctrl+g":
-			if conn := m.currentConnection(); conn != nil {
-				m.clearStaleErrorStatus()
-				m.groups = newGroupPanelState(m.translator, m.theme)
-				m.groups.mode = groupPanelMove
-				m.groups.targetID = conn.ID
-				m.overlay = overlayGroup
-				return m, m.loadGroupsCmd()
-			}
-			return m, nil
+			return m.openHomeMoveGroup()
 		case "i":
-			m.clearStaleErrorStatus()
-			m.page = pageImport
-			m.imports = newImportState(m.translator, m.theme)
-			return m, tea.ClearScreen
+			return m.openImportPage()
 		case "enter":
-			if conn := m.currentConnection(); conn != nil {
-				return m.startHomeProbe(*conn, homeProbeShell)
-			}
-			return m, nil
+			return m.openCurrentConnectionShell()
 		case "ctrl+o":
-			if conn := m.currentConnection(); conn != nil {
-				return m.startHomeProbe(*conn, homeProbeBrowser)
-			}
-			return m, nil
+			return m.openCurrentConnectionBrowser()
 		}
 	}
 	return m, nil
 }
 
 func (m *Model) viewHome() string {
-	styles := m.theme.Styles
 	width := m.width
 	if width == 0 {
 		width = 110
@@ -176,60 +112,43 @@ func (m *Model) viewHome() string {
 	contentWidth := max(36, width-4)
 	contentHeight := max(16, height-2)
 	mainWidth, listWidth, detailWidth := m.homePanelWidths(contentWidth)
-	bodyHeight := max(8, (contentHeight-7)*3/4)
-	body := m.viewHomeBody(listWidth, detailWidth, bodyHeight)
-
 	header := m.viewHomeHeader()
 	search := m.viewHomeSearch(mainWidth)
 	status := m.renderStatus()
-	footer := m.viewHomeFooter(contentWidth)
-	chunks := []string{
-		header,
+	footer := m.viewHomeFooter(mainWidth)
+	bodyHeight := max(8, contentHeight-lipgloss.Height(header)-lipgloss.Height(search)-lipgloss.Height(status)-lipgloss.Height(footer))
+	body := strings.Join([]string{
 		search,
-		body,
-		status,
-		footer,
-	}
-	view := strings.Join([]string{
-		chunks[0],
-		"",
-		chunks[1],
-		chunks[2],
-		"",
-		chunks[3],
-		"",
-		chunks[4],
+		m.viewHomeBody(listWidth, detailWidth, bodyHeight),
 	}, "\n")
-	if m.overlay == overlayDelete {
-		dialog := styles.Dialog.Width(44).Render(strings.Join([]string{
-			styles.PageTitle.Render(m.confirm.title),
-			"",
-			styles.SubtleText.Render(m.confirm.description),
-			"",
-			styles.MutedText.Render(m.translator.T("home.delete_keys", styles.Keycap.Render("esc"), styles.Keycap.Render("enter"), styles.Keycap.Render("y"))),
-		}, "\n"))
-		view = overlayCenter(view, dialog, contentWidth, contentHeight)
-	}
-	if m.overlay == overlayHelp {
-		view = overlayCenter(view, m.viewHomeHelp(), contentWidth, contentHeight)
-	}
-	if m.overlay == overlayGroup {
-		view = overlayCenter(view, m.viewGroupPanel(), contentWidth, contentHeight)
-	}
-	return view
+	return m.renderShell(shellView{
+		style:   m.theme.Styles.App,
+		width:   contentWidth,
+		height:  contentHeight,
+		header:  header,
+		body:    body,
+		status:  status,
+		footer:  footer,
+		overlay: m.homeOverlayView(contentWidth, contentHeight),
+	})
 }
 
 func (m *Model) viewHomeBody(listWidth int, detailWidth int, height int) string {
 	styles := m.theme.Styles
-	left := styles.FocusedPanel.Width(listWidth).Height(height).Render(m.viewConnectionList(listWidth-2, height-2))
-	right := styles.Panel.Width(detailWidth).Height(height).Render(m.viewConnectionDetail(detailWidth-2, height-2))
+	leftInnerWidth := max(12, listWidth-styles.FocusedPanel.GetHorizontalFrameSize())
+	leftInnerHeight := max(1, height-styles.FocusedPanel.GetVerticalFrameSize())
+	rightInnerWidth := max(12, detailWidth-styles.Panel.GetHorizontalFrameSize())
+	rightInnerHeight := max(1, height-styles.Panel.GetVerticalFrameSize())
+
+	left := renderSizedBlock(styles.FocusedPanel, listWidth, height, m.viewConnectionList(leftInnerWidth, leftInnerHeight))
+	right := renderSizedBlock(styles.Panel, detailWidth, height, m.viewConnectionDetail(rightInnerWidth, rightInnerHeight))
 	return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
 }
 
 func (m *Model) viewConnectionList(width int, height int) string {
 	styles := m.theme.Styles
 	title := m.viewConnectionListTitle()
-	if len(m.connections) == 0 {
+	if len(m.home.connections) == 0 {
 		empty := []string{
 			title,
 			"",
@@ -237,7 +156,7 @@ func (m *Model) viewConnectionList(width int, height int) string {
 			"",
 			m.translator.T("home.empty_action", styles.Keycap.Render("c-n")),
 		}
-		if strings.TrimSpace(m.search) != "" {
+		if strings.TrimSpace(m.home.search) != "" {
 			empty = []string{
 				title,
 				"",
@@ -253,16 +172,16 @@ func (m *Model) viewConnectionList(width int, height int) string {
 	rowHeight := 2
 	visible := max(1, (height-2)/rowHeight)
 	start := 0
-	if m.selected >= visible {
-		start = m.selected - visible + 1
+	if m.home.selected >= visible {
+		start = m.home.selected - visible + 1
 	}
-	if start+visible > len(m.connections) {
-		start = max(0, len(m.connections)-visible)
+	if start+visible > len(m.home.connections) {
+		start = max(0, len(m.home.connections)-visible)
 	}
-	end := min(len(m.connections), start+visible)
+	end := min(len(m.home.connections), start+visible)
 
 	for index := start; index < end; index++ {
-		lines = append(lines, m.renderConnectionRow(m.connections[index], index == m.selected, contentWidth))
+		lines = append(lines, m.renderConnectionRow(m.home.connections[index], index == m.home.selected, contentWidth))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -270,26 +189,53 @@ func (m *Model) viewConnectionList(width int, height int) string {
 func (m *Model) viewHomeHeader() string {
 	styles := m.theme.Styles
 	info := buildinfo.Info()
-	title := styles.PageTitle.Render(m.translator.T("home.title"))
-	meta := styles.SubtleText.Render(fmt.Sprintf("  %s  by %s", info.Version, info.Author))
-	return lipgloss.JoinHorizontal(lipgloss.Center, title, meta)
+	width := m.width
+	if width == 0 {
+		width = 110
+	}
+	contentWidth := max(36, width-4)
+	mainWidth, _, _ := m.homePanelWidths(contentWidth)
+	title := lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		styles.Badge.Render("SSH"),
+		" ",
+		styles.PageTitle.Render(m.translator.T("home.title")),
+	)
+	meta := lipgloss.JoinHorizontal(
+		lipgloss.Center,
+		styles.BadgeMuted.Render(info.Version),
+		" ",
+		styles.SubtleText.Render("by "+info.Author),
+	)
+	content := lipgloss.JoinHorizontal(
+		lipgloss.Left,
+		title,
+		"   ",
+		meta,
+		"   ",
+		m.homeScopeBadge(),
+		" ",
+		m.homeCountBadge(),
+	)
+	return renderSizedBlock(styles.Banner, max(24, mainWidth), 0, content)
 }
 
 func (m *Model) viewHomeSearch(width int) string {
 	styles := m.theme.Styles
 	style := styles.SearchBox
-	if m.searchMode {
+	if m.home.searchMode {
 		style = styles.SearchBoxFocused
 	}
-	m.searchInput.PromptStyle = styles.SubtleText
-	m.searchInput.PlaceholderStyle = styles.SubtleText
-	m.searchInput.TextStyle = m.homeSearchValueStyle()
-	m.searchInput.Width = max(12, width-6)
-	return style.Width(max(28, width+2)).Render(m.searchInput.View())
+	boxInnerWidth := max(12, width-style.GetHorizontalFrameSize())
+	m.home.searchInput.PromptStyle = styles.SubtleText
+	m.home.searchInput.PlaceholderStyle = styles.SubtleText
+	m.home.searchInput.TextStyle = m.homeSearchValueStyle()
+	m.home.searchInput.Width = boxInnerWidth
+	return renderSizedBlock(style, max(28, width), 0, m.home.searchInput.View())
 }
 
 func (m *Model) homeSearchValueStyle() lipgloss.Style {
-	if !m.searchMode && strings.TrimSpace(m.searchInput.Value()) != "" {
+	if !m.home.searchMode && strings.TrimSpace(m.home.searchInput.Value()) != "" {
 		return m.theme.Styles.SearchValueBlurred
 	}
 	return lipgloss.NewStyle()
@@ -309,11 +255,14 @@ func (m *Model) viewHomeHelp() string {
 }
 
 func (m *Model) viewHomeFooter(width int) string {
-	items := make([]string, 0, len(homeShortcuts())*2)
-	for _, shortcut := range homeShortcuts() {
+	styles := m.theme.Styles
+	items := make([]string, 0, len(homeFooterShortcuts())*2)
+	for _, shortcut := range homeFooterShortcuts() {
 		items = append(items, shortcut.key, shortcut.footerKey)
 	}
-	return localizedShortcutHelpWidth(m.translator, m.theme, max(24, width-2), items...)
+	innerWidth := max(24, width-styles.Panel.GetHorizontalFrameSize())
+	content := localizedShortcutHelpWidth(m.translator, m.theme, innerWidth, items...)
+	return renderSizedBlock(styles.Panel, max(26, width), 0, content)
 }
 
 type homeShortcut struct {
@@ -324,6 +273,7 @@ type homeShortcut struct {
 
 func homeShortcuts() []homeShortcut {
 	return []homeShortcut{
+		{":/c-p", "home.help_palette", "home.footer_palette"},
 		{"j/k", "home.help_move", "home.footer_move"},
 		{"enter", "home.help_open_shell", "home.footer_shell"},
 		{"c-o", "home.help_open_files", "home.footer_files"},
@@ -339,31 +289,61 @@ func homeShortcuts() []homeShortcut {
 	}
 }
 
+func homeFooterShortcuts() []homeShortcut {
+	return []homeShortcut{
+		{"enter", "home.help_open_shell", "home.footer_shell"},
+		{"c-o", "home.help_open_files", "home.footer_files"},
+		{"c-p", "home.help_palette", "home.footer_palette"},
+		{"/", "home.help_start_search", "home.footer_search"},
+		{"?", "home.help_help", "home.footer_help"},
+		{"q", "home.help_quit", "home.footer_quit"},
+	}
+}
+
 func (m *Model) renderStatus() string {
+	return m.renderStatusBar(m.statusBarWidth())
+}
+
+func (m *Model) renderStatusBar(width int) string {
+	bar, content := m.renderStatusLine(max(1, width))
+	return renderSizedBlock(bar, width, 0, content)
+}
+
+func (m *Model) renderStatusLine(width int) (lipgloss.Style, string) {
 	styles := m.theme.Styles
+	label := styles.BadgeMuted.Render("INFO")
+	bar := styles.StatusBar
+	textWidth := max(12, width-bar.GetHorizontalFrameSize()-lipgloss.Width(label)-1)
+	content := lipgloss.JoinHorizontal(lipgloss.Left, label, " ", styles.SubtleText.Render(truncate(m.status, textWidth)))
 	if m.err != nil {
-		return styles.ErrorText.Render(m.status)
+		label = styles.Badge.Render("ERR")
+		bar = styles.StatusBarError
+		textWidth = max(12, width-bar.GetHorizontalFrameSize()-lipgloss.Width(label)-1)
+		content = lipgloss.JoinHorizontal(lipgloss.Left, label, " ", styles.ErrorText.Render(truncate(m.status, textWidth)))
 	}
-	if m.statusSuccess {
-		return styles.SuccessText.Render(m.status)
+	if m.err == nil && m.statusSuccess {
+		label = styles.BadgeAccent.Render("DONE")
+		bar = styles.StatusBarSuccess
+		textWidth = max(12, width-bar.GetHorizontalFrameSize()-lipgloss.Width(label)-1)
+		content = lipgloss.JoinHorizontal(lipgloss.Left, label, " ", styles.SuccessText.Render(truncate(m.status, textWidth)))
 	}
-	return styles.SubtleText.Render(m.status)
+	return bar, content
 }
 
 func (m *Model) currentConnection() *Connection {
-	if len(m.connections) == 0 || m.selected < 0 || m.selected >= len(m.connections) {
+	if len(m.home.connections) == 0 || m.home.selected < 0 || m.home.selected >= len(m.home.connections) {
 		return nil
 	}
-	return &m.connections[m.selected]
+	return &m.home.connections[m.home.selected]
 }
 
 func (m *Model) loadConnectionsCmd() tea.Cmd {
-	query := strings.TrimSpace(m.search)
+	query := strings.TrimSpace(m.home.search)
 	return func() tea.Msg {
 		items, err := m.services.Connections.ListWithOptions(domain.ConnectionListOptions{
 			Query:   query,
-			Scope:   m.listScope,
-			GroupID: m.listGroupID,
+			Scope:   m.home.listScope,
+			GroupID: m.home.listGroupID,
 		})
 		return connectionsLoadedMsg{items: items, err: err}
 	}
@@ -380,7 +360,7 @@ func (m *Model) deleteConnectionCmd(id int64) tea.Cmd {
 }
 
 func (m *Model) startHomeProbe(conn Connection, action homeProbeAction) (tea.Model, tea.Cmd) {
-	m.connecting = true
+	m.home.connecting = true
 	m.setInfoStatus(m.homeProbePendingStatus(action, conn.Name))
 	return m, m.probeConnectionCmd(conn, action)
 }
@@ -414,16 +394,21 @@ func (m *Model) actionRow(key string, labelKey string) string {
 
 func (m *Model) renderConnectionRow(conn Connection, selected bool, width int) string {
 	styles := m.theme.Styles
-	nameLine := styles.ListItemTitle.Render(truncate(conn.Name, width))
-	metaLine := styles.ListItemMeta.Render(truncate(m.connectionListMeta(conn), width))
+	rowStyle := styles.Text.Copy().Padding(0, 1)
+	nameStyle := styles.ListItemTitle
 	if selected {
-		selectedText := styles.Selection.Copy().Width(width)
-		return selectedText.Padding(0, 1).Render(strings.Join([]string{
-			truncate(conn.Name, width),
-			truncate(m.connectionListMeta(conn), width),
-		}, "\n"))
+		rowStyle = styles.Selection.Copy().Padding(0, 1)
+		nameStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(m.theme.Palette.SelectionText)
 	}
-	return styles.Text.Copy().Width(width).Padding(0, 1).Render(strings.Join([]string{nameLine, metaLine}, "\n"))
+	nameLine := nameStyle.Render(truncate(conn.Name, max(8, width-2)))
+	metaLine := styles.ListItemMeta.Render(truncate(m.connectionListMeta(conn), max(8, width-2)))
+	content := strings.Join([]string{nameLine, metaLine}, "\n")
+	if selected {
+		return renderSizedBlock(rowStyle, width, 0, content)
+	}
+	return renderSizedBlock(rowStyle, width, 0, content)
 }
 
 func (m *Model) connectionListMeta(conn Connection) string {
@@ -434,24 +419,24 @@ func (m *Model) viewConnectionListTitle() string {
 	styles := m.theme.Styles
 	title := styles.SectionTitle.Render(m.translator.T("home.connections"))
 	if label := m.currentScopeLabel(); label != "" {
-		return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", m.connectionListScopeStyle().Render("("+label+")"))
+		return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", styles.BadgeMuted.Render("("+label+")"))
 	}
 	return title
 }
 
 func (m *Model) connectionListScopeStyle() lipgloss.Style {
-	if m.listScope == domain.ConnectionListScopeAll {
+	if m.home.listScope == domain.ConnectionListScopeAll {
 		return m.theme.Styles.SectionTitle
 	}
 	return m.theme.Styles.GroupScope
 }
 
 func (m *Model) currentScopeLabel() string {
-	switch m.listScope {
+	switch m.home.listScope {
 	case domain.ConnectionListScopeUngrouped:
 		return m.translator.T("group.ungrouped")
 	case domain.ConnectionListScopeGroup:
-		return m.listGroup
+		return m.home.listGroup
 	default:
 		return m.translator.T("group.all")
 	}
@@ -462,7 +447,12 @@ func (m *Model) viewConnectionDetail(width int, height int) string {
 	title := styles.SectionTitle.Render(m.translator.T("home.details"))
 	conn := m.currentConnection()
 	if conn == nil {
-		return strings.Join([]string{title, "", styles.SubtleText.Render(m.translator.T("home.empty"))}, "\n")
+		return strings.Join([]string{
+			title,
+			"",
+			styles.SubtleText.Render(m.translator.T("home.empty")),
+			styles.MutedText.Render(m.translator.T("home.empty_action", styles.Keycap.Render("c-n"))),
+		}, "\n")
 	}
 	hostInfo := fmt.Sprintf("%s@%s:%d", conn.Username, conn.Host, conn.Port)
 	lastUsed := m.translator.T("home.never")
@@ -470,23 +460,26 @@ func (m *Model) viewConnectionDetail(width int, height int) string {
 		lastUsed = m.relativeTime(*conn.LastUsedAt)
 	}
 	description := defaultString(conn.Description, "—")
-	lines := []string{title, "",
+	lines := []string{
+		title,
+		"",
 		styles.PageTitle.Width(width).Render(wrapText(conn.Name, width)),
+		styles.SubtleText.Width(width).Render(truncate(hostInfo, width)),
 		"",
 	}
 	lines = append(lines,
-		m.detailLine("home.detail_group", defaultString(m.connectionGroupLabel(*conn), "—"), width),
+		m.detailLine("home.detail_auth", m.authTypeLabel(conn.AuthType), width),
+		m.detailLine("home.detail_group", defaultString(m.connectionGroupLabel(*conn), m.translator.T("group.ungrouped")), width),
 		m.detailLine("form.host", conn.Host, width),
 		m.detailLine("form.port", fmt.Sprintf("%d", conn.Port), width),
 		m.detailLine("form.username", conn.Username, width),
 		m.detailLine("home.table_address", hostInfo, width),
-		m.detailLine("home.detail_auth", m.authTypeLabel(conn.AuthType), width),
+		m.detailLine("home.table_last_used", lastUsed, width),
 	)
 	if conn.AuthType == domain.AuthTypePrivateKey {
 		lines = append(lines, m.detailLine("form.key_path", defaultString(conn.PrivateKeyPath, "—"), width))
 	}
 	lines = append(lines,
-		m.detailLine("home.table_last_used", lastUsed, width),
 		"",
 		styles.SectionTitle.Render(m.translator.T("home.table_description")),
 		styles.MutedText.Width(width).Render(wrapText(description, width)),
@@ -502,18 +495,39 @@ func (m *Model) connectionGroupLabel(conn Connection) string {
 }
 
 func (m *Model) homePanelWidths(contentWidth int) (int, int, int) {
-	listWidth := max(24, contentWidth*4/10)
-	detailWidth := max(24, contentWidth*4/10)
-	mainWidth := min(contentWidth, listWidth+2+detailWidth)
+	mainWidth := contentWidth
+	listWidth := max(26, (mainWidth-2)*42/100)
+	detailWidth := max(28, mainWidth-listWidth-2)
 	return mainWidth, listWidth, detailWidth
+}
+
+func (m *Model) homeScopeBadge() string {
+	return m.theme.Styles.BadgeMuted.Render(m.currentScopeLabel())
+}
+
+func (m *Model) homeCountBadge() string {
+	return m.theme.Styles.BadgeAccent.Render(fmt.Sprintf("%d", len(m.home.connections)))
+}
+
+func (m *Model) statusBarWidth() int {
+	width := m.width
+	if width == 0 {
+		width = 110
+	}
+	contentWidth := max(36, width-4)
+	if m.page == pageHome {
+		mainWidth, _, _ := m.homePanelWidths(contentWidth)
+		return mainWidth
+	}
+	return contentWidth
 }
 
 func (m *Model) detailLine(labelKey string, value string, width int) string {
 	styles := m.theme.Styles
-	labelWidth := min(12, max(8, width/3))
+	labelWidth := min(10, max(6, width/3))
 	valueWidth := max(8, width-labelWidth-2)
 	label := styles.SubtleText.Width(labelWidth).Render(m.translator.T(labelKey))
-	renderedValue := styles.Text.Copy().Width(valueWidth).Render(wrapText(defaultString(value, "—"), valueWidth))
+	renderedValue := styles.Text.Copy().Width(valueWidth).MaxWidth(valueWidth).Render(wrapText(defaultString(value, "—"), valueWidth))
 	return lipgloss.JoinHorizontal(lipgloss.Top, label, "  ", renderedValue)
 }
 

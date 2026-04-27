@@ -37,15 +37,30 @@ func detectLocalStartPath() string {
 }
 
 func (p *filePanel) rows() []domain.FileEntry {
-	rows := make([]domain.FileEntry, 0, len(p.items)+1)
+	filteredItems := filterFileEntries(p.items, p.filter)
+	rows := make([]domain.FileEntry, 0, len(filteredItems)+1)
 	if strings.TrimSpace(p.path) != "" {
 		parent := parentPath(p.path, p.panel == domain.RemotePanel)
 		if parent != p.path {
 			rows = append(rows, domain.FileEntry{Name: "..", Path: parent, IsDir: true, Panel: p.panel})
 		}
 	}
-	rows = append(rows, p.items...)
+	rows = append(rows, filteredItems...)
 	return rows
+}
+
+func filterFileEntries(items []domain.FileEntry, filter string) []domain.FileEntry {
+	query := strings.ToLower(strings.TrimSpace(filter))
+	if query == "" {
+		return items
+	}
+	filtered := make([]domain.FileEntry, 0, len(items))
+	for _, entry := range items {
+		if strings.Contains(strings.ToLower(entry.Name), query) {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func (p *filePanel) selected() (domain.FileEntry, bool) {
@@ -169,6 +184,20 @@ func overlayCenter(base string, overlay string, width int, height int) string {
 		return base + "\n\n" + overlay
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, overlay)
+}
+
+func renderSizedBlock(style lipgloss.Style, outerWidth int, outerHeight int, content string) string {
+	block := style
+	if outerWidth > 0 {
+		// lipgloss 的 Width/Height 已包含 padding，仅需扣除 border 才能得到目标外宽/外高。
+		innerWidth := max(1, outerWidth-style.GetHorizontalBorderSize())
+		block = block.Width(innerWidth)
+	}
+	if outerHeight > 0 {
+		innerHeight := max(1, outerHeight-style.GetVerticalBorderSize())
+		block = block.Height(innerHeight)
+	}
+	return block.Render(content)
 }
 
 func localizedShortcutHelpWidth(translator *i18n.Translator, theme Theme, width int, items ...string) string {

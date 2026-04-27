@@ -45,6 +45,7 @@ type localLoadedMsg struct {
 	items      []domain.FileEntry
 	path       string
 	selectName string
+	request    int
 	err        error
 }
 
@@ -52,6 +53,7 @@ type remoteLoadedMsg struct {
 	items      []domain.FileEntry
 	path       string
 	selectName string
+	request    int
 	err        error
 }
 

@@ -22,33 +22,9 @@ type Model struct {
 	defaultPrivateKeyPath string
 	result                AppResult
 
-	width  int
-	height int
-
-	page    page
-	overlay overlayKind
-
-	searchInput textinput.Model
-	search      string
-	searchMode  bool
-	listScope   domain.ConnectionListScope
-	listGroupID int64
-	listGroup   string
-
-	connections   []Connection
-	selected      int
-	status        string
-	statusSuccess bool
-	err           error
-	connecting    bool
-
-	form formState
-
-	browser browserState
-	groups  groupPanelState
-	imports importState
-
-	confirm confirmState
+	shellState
+	screenState
+	overlayState
 }
 
 func NewModel(services *app.Services, translator *i18n.Translator, startupDir string, defaultPrivateKeyPath string) *Model {
@@ -70,13 +46,21 @@ func NewModel(services *app.Services, translator *i18n.Translator, startupDir st
 		theme:                 theme,
 		startupDir:            startupDir,
 		defaultPrivateKeyPath: defaultPrivateKeyPath,
-		page:                  pageHome,
-		searchInput:           searchInput,
-		status:                translator.T("status.ready"),
-		form:                  newFormState(nil, translator, defaultPrivateKeyPath, theme),
-		browser:               newBrowserState(translator, theme),
-		groups:                newGroupPanelState(translator, theme),
-		imports:               newImportState(translator, theme),
+		shellState: shellState{
+			page:   pageHome,
+			status: translator.T("status.ready"),
+		},
+		screenState: screenState{
+			home: homeScreenState{
+				searchInput: searchInput,
+			},
+			form:    newFormState(nil, translator, defaultPrivateKeyPath, theme),
+			browser: newBrowserState(translator, theme),
+			imports: newImportState(translator, theme),
+		},
+		overlayState: overlayState{
+			groups: newGroupPanelState(translator, theme),
+		},
 	}
 }
 
@@ -123,23 +107,23 @@ func (m *Model) clearStaleErrorStatus() {
 }
 
 func (m *Model) homeReadyStatus() string {
-	if len(m.connections) == 0 {
-		if strings.TrimSpace(m.search) != "" {
+	if len(m.home.connections) == 0 {
+		if strings.TrimSpace(m.home.search) != "" {
 			return m.translator.T("status.no_matches")
 		}
 		return m.translator.T("status.no_connections")
 	}
-	if strings.TrimSpace(m.search) != "" {
-		return m.translator.T("status.found_connections", len(m.connections))
+	if strings.TrimSpace(m.home.search) != "" {
+		return m.translator.T("status.found_connections", len(m.home.connections))
 	}
-	return m.translator.T("status.connections_ready", len(m.connections))
+	return m.translator.T("status.connections_ready", len(m.home.connections))
 }
 
 func (m *Model) applyConnectionsLoaded(items []Connection) {
-	m.connections = items
-	m.selected = clamp(m.selected, len(m.connections))
-	if len(m.connections) == 0 {
-		m.selected = 0
+	m.home.connections = items
+	m.home.selected = clamp(m.home.selected, len(m.home.connections))
+	if len(m.home.connections) == 0 {
+		m.home.selected = 0
 		m.setInfoStatus(m.homeReadyStatus())
 		return
 	}
@@ -187,13 +171,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.err = nil
-		if msg.groupName != "" && m.listScope == domain.ConnectionListScopeGroup && m.listGroupID == msg.groupID {
-			m.listGroup = msg.groupName
+		if msg.groupName != "" && m.home.listScope == domain.ConnectionListScopeGroup && m.home.listGroupID == msg.groupID {
+			m.home.listGroup = msg.groupName
 		}
 		if msg.clearGroupFilter {
-			m.listScope = domain.ConnectionListScopeAll
-			m.listGroupID = 0
-			m.listGroup = ""
+			m.home.listScope = domain.ConnectionListScopeAll
+			m.home.listGroupID = 0
+			m.home.listGroup = ""
 		}
 		if msg.success {
 			m.setSuccessStatus(msg.status)
@@ -227,10 +211,10 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.page = pageHome
 		if msg.setScope {
-			m.listScope = msg.scope
-			m.listGroupID = msg.groupID
-			m.listGroup = msg.groupName
-			m.selected = 0
+			m.home.listScope = msg.scope
+			m.home.listGroupID = msg.groupID
+			m.home.listGroup = msg.groupName
+			m.home.selected = 0
 		}
 		m.setSuccessStatus(m.translator.T("status.import_done", msg.summary.Created, msg.summary.Updated, msg.summary.Skipped))
 		if msg.reloadConnections {
@@ -238,6 +222,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case localLoadedMsg:
+		if msg.request != 0 && msg.request != m.browser.localPanel.request {
+			return m, nil
+		}
 		if msg.err != nil {
 			m.setErrorStatus(msg.err)
 			m.browser.localPanel.loading = false
@@ -245,6 +232,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyLoadedBrowserPanel(&m.browser.localPanel, msg.items, msg.path, msg.selectName)
 	case remoteLoadedMsg:
+		if msg.request != 0 && msg.request != m.browser.remotePanel.request {
+			return m, nil
+		}
 		if msg.err != nil {
 			if m.page == pageBrowser && isBrowserSessionError(msg.err) {
 				return m.handleBrowserSessionFailure(msg.err)
@@ -255,7 +245,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.applyLoadedBrowserPanel(&m.browser.remotePanel, msg.items, msg.path, msg.selectName)
 	case homeProbeDoneMsg:
-		m.connecting = false
+		m.home.connecting = false
 		if msg.err != nil {
 			m.setErrorStatus(fmt.Errorf(m.homeProbeFailedStatus(msg.action, msg.connectionName, msg.err)))
 			return m, nil
@@ -291,18 +281,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, listenTransferProgress(msg.source)
 	}
 
-	switch m.page {
-	case pageHome:
-		return m.updateHome(msg)
-	case pageForm:
-		return m.updateForm(msg)
-	case pageBrowser:
-		return m.updateBrowser(msg)
-	case pageImport:
-		return m.updateImport(msg)
-	default:
-		return m, nil
-	}
+	return m.currentScreen().update(m, msg)
 }
 
 func (m *Model) homeProbeFailedStatus(action homeProbeAction, connectionName string, err error) string {
@@ -377,15 +356,5 @@ func isBrowserSessionError(err error) bool {
 }
 
 func (m *Model) View() string {
-	styles := m.theme.Styles
-	switch m.page {
-	case pageForm:
-		return styles.App.Render(m.viewForm())
-	case pageBrowser:
-		return m.viewBrowser()
-	case pageImport:
-		return styles.App.Render(m.viewImport())
-	default:
-		return styles.App.Render(m.viewHome())
-	}
+	return m.currentScreen().view(m)
 }
