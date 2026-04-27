@@ -98,6 +98,13 @@ func EnsurePaths(runtime RuntimeConfig) error {
 }
 
 func defaultConfigDir() (string, error) {
+	// 优先尊重显式环境变量，方便 CI、测试和便携部署稳定覆盖默认配置目录。
+	if baseDir := strings.TrimSpace(os.Getenv("APPDATA")); baseDir != "" {
+		return filepath.Join(baseDir, appDirName), nil
+	}
+	if baseDir := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); baseDir != "" {
+		return filepath.Join(baseDir, appDirName), nil
+	}
 	baseDir, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

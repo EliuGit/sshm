@@ -192,7 +192,6 @@ go build -trimpath -ldflags "-X sshm/internal/buildinfo.Version=v0.1.0" .
 - 当前产物：
   - `linux-musl-amd64`
   - `darwin-amd64`
-  - `darwin-arm64`
   - `windows-amd64`
 
 ## 已知限制

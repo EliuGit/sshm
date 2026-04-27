@@ -39,12 +39,6 @@ jobs:
             goarch: amd64
             artifact_name: release-darwin-amd64
             binary_name: sshm
-          - runner: macos-14
-            target_name: darwin-arm64
-            goos: darwin
-            goarch: arm64
-            artifact_name: release-darwin-arm64
-            binary_name: sshm
           - runner: windows-latest
             target_name: windows-amd64
             goos: windows
