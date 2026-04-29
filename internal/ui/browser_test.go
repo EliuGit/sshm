@@ -2,9 +2,12 @@ package ui
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sshm/internal/app"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 	"testing"
 
@@ -22,19 +25,23 @@ func (s *closeTrackingSession) ListRemote(targetPath string) ([]domain.FileEntry
 	return nil, "", nil
 }
 func (s *closeTrackingSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (s *closeTrackingSession) Mkdir(targetPath string) error              { return nil }
+func (s *closeTrackingSession) Remove(targetPath string) error             { return nil }
+func (s *closeTrackingSession) Rename(sourcePath string, targetPath string) error {
+	return nil
+}
 func (s *closeTrackingSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
 	return nil
 }
 func (s *closeTrackingSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
 	return nil
 }
-func (s *closeTrackingSession) HomeDir() (string, error) { return "/", nil }
 func (s *closeTrackingSession) Close() error {
 	s.closed = true
 	return nil
 }
 
-var _ app.RemoteSession = (*closeTrackingSession)(nil)
+var _ app.FileSession = (*closeTrackingSession)(nil)
 
 func TestBrowserEscClearsActiveFilter(t *testing.T) {
 	t.Parallel()
@@ -224,6 +231,31 @@ func TestBrowserRefreshSamePathKeepsFilter(t *testing.T) {
 	}
 }
 
+func TestBrowserNavigateRemotePathDoesNotSetLoadingStatus(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser.remotePanel.path = "/var"
+	model.setInfoStatus(translator.T("status.browser_ready"))
+
+	cmd := model.navigateBrowserPath(domain.RemotePanel, "/var/log")
+	if model.status != translator.T("status.browser_ready") {
+		t.Fatalf("status = %q, want unchanged browser ready", model.status)
+	}
+	if !model.browser.remotePanel.loading {
+		t.Fatal("remotePanel.loading = false, want true")
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want reload command")
+	}
+}
+
 func TestBrowserIgnoresStaleRemoteLoadResult(t *testing.T) {
 	t.Parallel()
 
@@ -238,7 +270,8 @@ func TestBrowserIgnoresStaleRemoteLoadResult(t *testing.T) {
 	model.browser.remotePanel.loading = true
 	model.browser.remotePanel.filter = "new"
 
-	updated, _ := model.Update(remoteLoadedMsg{
+	updated, _ := model.Update(browserLoadedMsg{
+		panel:   domain.RemotePanel,
 		request: 1,
 		path:    "/var/log",
 		items: []domain.FileEntry{
@@ -316,7 +349,7 @@ func TestRemoteLoadedConnectionErrorReturnsHomeAndClosesSession(t *testing.T) {
 	session := &closeTrackingSession{}
 	model.browser.session = session
 
-	updated, cmd := model.Update(remoteLoadedMsg{err: errors.New("broken pipe")})
+	updated, cmd := model.Update(browserLoadedMsg{panel: domain.RemotePanel, err: errors.New("broken pipe")})
 	got := updated.(*Model)
 	if got.page != pageHome {
 		t.Fatalf("page = %v, want %v", got.page, pageHome)
@@ -414,6 +447,40 @@ func TestRenderBrowserPanelUsesIcons(t *testing.T) {
 	}
 }
 
+func TestRenderBrowserPanelPinsLoadingToBottomRight(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	panel := filePanel{
+		panel:   domain.RemotePanel,
+		title:   translator.T("browser.remote"),
+		path:    "/var/log",
+		loading: true,
+		items: []domain.FileEntry{
+			{Name: "app.log", Path: "/var/log/app.log", Panel: domain.RemotePanel},
+			{Name: "syslog", Path: "/var/log/syslog", Panel: domain.RemotePanel},
+		},
+	}
+
+	view := ansi.Strip(model.renderBrowserPanel(panel, 40, 8, true))
+	lines := strings.Split(view, "\n")
+	if len(lines) < 3 {
+		t.Fatalf("panel lines = %d, want >= 3", len(lines))
+	}
+	lastInner := lines[len(lines)-2]
+	if !strings.Contains(lastInner, "加载中...") {
+		t.Fatalf("last inner line = %q, want loading text pinned at bottom", lastInner)
+	}
+	if strings.Contains(lines[len(lines)-3], "加载中...") {
+		t.Fatalf("loading text should not appear above bottom line: %q", lines[len(lines)-3])
+	}
+}
+
 func TestBrowserFooterMatchesActiveShortcuts(t *testing.T) {
 	t.Parallel()
 
@@ -429,7 +496,7 @@ func TestBrowserFooterMatchesActiveShortcuts(t *testing.T) {
 	model.browser.localPanel.path = `C:\work\project`
 
 	footer := model.renderBrowserFooter(220)
-	for _, key := range []string{"enter/l", "tab", "c-u", "c-d", "c-p", "q"} {
+	for _, key := range []string{"enter/l", "tab", "c-n", "c-r", "c-d", "c-u", "c-s", "c-p", "q"} {
 		if !strings.Contains(footer, key) {
 			t.Fatalf("footer = %q, want shortcut %q", footer, key)
 		}
@@ -458,9 +525,9 @@ func TestBrowserConfirmDialogShowsSourceAndTarget(t *testing.T) {
 		confirmSelection: false,
 		choiceEnabled:    true,
 	}
-	model.browser.pending = &browserTransfer{source: `C:\work\project\archive.log`}
+	model.browser.pending = &browserPendingOperation{}
 
-	dialog := model.viewBrowserOverwriteConfirm(100)
+	dialog := model.viewBrowserConfirm(100)
 	if !strings.Contains(dialog, "来源：") || !strings.Contains(dialog, `C:\work\project\archive.log`) {
 		t.Fatalf("dialog = %q, want source path", dialog)
 	}
@@ -485,9 +552,7 @@ func TestBrowserConfirmEscCancelsOnlyConfirmState(t *testing.T) {
 	model.browser.localPanel.filter = "log"
 	model.browser.remotePanel.path = "/var/log"
 	model.browser.remotePanel.filter = "app"
-	model.browser.pending = &browserTransfer{
-		source:   `C:\work\project\archive.log`,
-		target:   "/var/log/archive.log",
+	model.browser.pending = &browserPendingOperation{
 		selectBy: "archive.log",
 		panel:    domain.RemotePanel,
 	}
@@ -637,6 +702,59 @@ func TestBrowserPlainUploadDownloadKeysDoNotTriggerTransfer(t *testing.T) {
 	}
 }
 
+func TestBrowserCtrlShortcutsMatchMainStyle(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.styles)
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = `C:\work\project`
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "archive.log", Path: `C:\work\project\archive.log`, Panel: domain.LocalPanel},
+	}
+	model.browser.localPanel.cursor = 1
+
+	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyCtrlN})
+	got := updated.(*Model)
+	if got.overlay != overlayBrowserInput || got.browser.inputMode != browserInputMkdir {
+		t.Fatalf("ctrl+n overlay=%v inputMode=%v, want mkdir input", got.overlay, got.browser.inputMode)
+	}
+
+	model.overlay = overlayNone
+	updated, _ = model.updateBrowser(tea.KeyMsg{Type: tea.KeyCtrlR})
+	got = updated.(*Model)
+	if got.overlay != overlayBrowserInput || got.browser.inputMode != browserInputRename {
+		t.Fatalf("ctrl+r overlay=%v inputMode=%v, want rename input", got.overlay, got.browser.inputMode)
+	}
+
+	model.overlay = overlayNone
+	updated, _ = model.updateBrowser(tea.KeyMsg{Type: tea.KeyCtrlD})
+	got = updated.(*Model)
+	if got.overlay != overlayBrowserConfirm || got.confirm.action != confirmActionBrowserDelete {
+		t.Fatalf("ctrl+d overlay=%v confirm=%v, want delete confirm", got.overlay, got.confirm.action)
+	}
+}
+
+func TestBrowserRemotePanelTitleUsesRemoteLabel(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	state := newBrowserState(translator, themes.MustStyles(themes.DefaultName))
+	if state.remotePanel.title != "远端" {
+		t.Fatalf("remotePanel.title = %q, want 远端", state.remotePanel.title)
+	}
+}
+
 func TestBrowserViewFitsViewportWidth(t *testing.T) {
 	t.Parallel()
 
@@ -684,5 +802,109 @@ func TestBrowserStatusAndFooterRenderSeparately(t *testing.T) {
 	}
 	if strings.Contains(footer, "INFO") {
 		t.Fatalf("footer = %q, want no status text in shortcut panel", footer)
+	}
+}
+
+func TestBrowserMkdirCreatesLocalDirectory(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	baseDir := t.TempDir()
+	model := NewModel(&app.Services{Files: &app.FileService{}}, translator, baseDir, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.styles)
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = baseDir
+
+	updated, _ := model.openBrowserMkdirInput()
+	got := updated.(*Model)
+	got.browser.input.SetValue("logs")
+
+	updated, cmd := got.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	got = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("cmd = nil, want mkdir operation command")
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		t.Fatalf("cmd() msg = %T, want tea.BatchMsg", msg)
+	}
+	var done opDoneMsg
+	found := false
+	for _, part := range batch {
+		if part == nil {
+			continue
+		}
+		if result, ok := part().(opDoneMsg); ok {
+			done = result
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("batch result missing opDoneMsg")
+	}
+	if done.err != nil {
+		t.Fatalf("opDoneMsg.err = %v", done.err)
+	}
+	if done.status != translator.T("status.browser_dir_created", "logs") {
+		t.Fatalf("status = %q, want mkdir success status", done.status)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, "logs")); err != nil {
+		t.Fatalf("created dir missing: %v", err)
+	}
+}
+
+func TestBrowserRenameExistingLocalTargetOpensOverwriteConfirm(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+
+	baseDir := t.TempDir()
+	sourcePath := filepath.Join(baseDir, "app.log")
+	targetPath := filepath.Join(baseDir, "archive.log")
+	if err := os.WriteFile(sourcePath, []byte("a"), 0600); err != nil {
+		t.Fatalf("WriteFile(source) error = %v", err)
+	}
+	if err := os.WriteFile(targetPath, []byte("b"), 0600); err != nil {
+		t.Fatalf("WriteFile(target) error = %v", err)
+	}
+
+	model := NewModel(&app.Services{Files: &app.FileService{}}, translator, baseDir, "~/.ssh/id_ed25519")
+	model.page = pageBrowser
+	model.browser = newBrowserState(translator, model.styles)
+	model.browser.activePanel = domain.LocalPanel
+	model.browser.localPanel.path = baseDir
+	model.browser.localPanel.items = []domain.FileEntry{
+		{Name: "app.log", Path: sourcePath, Size: 1, Mode: 0600, Panel: domain.LocalPanel},
+		{Name: "archive.log", Path: targetPath, Size: 1, Mode: 0600, Panel: domain.LocalPanel},
+	}
+	model.browser.localPanel.cursor = 1
+
+	updated, _ := model.openBrowserRenameInput()
+	got := updated.(*Model)
+	got.browser.input.SetValue("archive.log")
+
+	updated, cmd := got.updateBrowser(tea.KeyMsg{Type: tea.KeyEnter})
+	got = updated.(*Model)
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil until overwrite confirmed", cmd)
+	}
+	if got.overlay != overlayBrowserConfirm {
+		t.Fatalf("overlay = %v, want %v", got.overlay, overlayBrowserConfirm)
+	}
+	if got.confirm.action != confirmActionBrowserOverwrite {
+		t.Fatalf("confirm.action = %v, want overwrite", got.confirm.action)
+	}
+	if got.browser.pending == nil || got.confirm.targetPath != targetPath {
+		t.Fatalf("pending = %#v, confirm.targetPath = %q, want %q", got.browser.pending, got.confirm.targetPath, targetPath)
 	}
 }

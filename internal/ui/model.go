@@ -225,29 +225,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.loadConnectionsCmd()
 		}
 		return m, nil
-	case localLoadedMsg:
-		if msg.request != 0 && msg.request != m.browser.localPanel.request {
+	case browserLoadedMsg:
+		panel := &m.browser.localPanel
+		if msg.panel == domain.RemotePanel {
+			panel = &m.browser.remotePanel
+		}
+		if msg.request != 0 && msg.request != panel.request {
 			return m, nil
 		}
 		if msg.err != nil {
-			m.setErrorStatus(msg.err)
-			m.browser.localPanel.loading = false
-			return m, nil
-		}
-		m.applyLoadedBrowserPanel(&m.browser.localPanel, msg.items, msg.path, msg.selectName)
-	case remoteLoadedMsg:
-		if msg.request != 0 && msg.request != m.browser.remotePanel.request {
-			return m, nil
-		}
-		if msg.err != nil {
-			if m.page == pageBrowser && isBrowserSessionError(msg.err) {
-				return m.handleBrowserSessionFailure(msg.err)
+			if msg.panel == domain.RemotePanel && m.page == pageBrowser && isBrowserSessionError(msg.err) {
+				return m.browserWorkflow().handleSessionFailure(msg.err)
 			}
 			m.setErrorStatus(msg.err)
-			m.browser.remotePanel.loading = false
+			panel.loading = false
 			return m, nil
 		}
-		m.applyLoadedBrowserPanel(&m.browser.remotePanel, msg.items, msg.path, msg.selectName)
+		m.applyLoadedBrowserPanel(panel, msg.items, msg.path, msg.selectName)
 	case homeProbeDoneMsg:
 		m.home.connecting = false
 		if msg.err != nil {
@@ -261,7 +255,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case opDoneMsg:
 		if msg.err != nil {
 			if m.page == pageBrowser && isBrowserSessionError(msg.err) {
-				return m.handleBrowserSessionFailure(msg.err)
+				return m.browserWorkflow().handleSessionFailure(msg.err)
 			}
 			m.setErrorStatus(msg.err)
 			return m, nil
@@ -272,7 +266,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setInfoStatus(msg.status)
 		}
 		if msg.reloadBrowser {
-			return m, m.reloadBrowserSelectCmd(msg.targetPanel, msg.selectName)
+			return m, m.browserWorkflow().reloadSelectCmd(msg.targetPanel, msg.selectName)
 		}
 		if msg.reloadConnections {
 			return m, m.loadConnectionsCmd()
@@ -300,40 +294,12 @@ func (m *Model) homeProbeFailedStatus(action homeProbeAction, connectionName str
 func (m *Model) completeHomeProbe(msg homeProbeDoneMsg) (tea.Model, tea.Cmd) {
 	switch msg.action {
 	case homeProbeBrowser:
-		return m.openBrowserForConnection(msg.connection, msg.session)
+		return m.browserWorkflow().openConnection(msg.connection, msg.fileSession)
 	default:
 		return m, func() tea.Msg {
-			return shellReadyMsg{session: msg.session}
+			return shellReadyMsg{session: msg.shellSession}
 		}
 	}
-}
-
-func (m *Model) openBrowserForConnection(conn Connection, session app.RemoteSession) (tea.Model, tea.Cmd) {
-	m.page = pageBrowser
-	m.browser = newBrowserState(m.translator, m.styles)
-	m.browser.connectionID = conn.ID
-	m.browser.connection = conn
-	m.browser.session = session
-	m.browser.localPanel.path = m.startupDir
-	m.browser.remotePanel.path = "."
-	m.browser.activePanel = domain.LocalPanel
-	m.browser.localPanel.loading = true
-	m.browser.remotePanel.loading = true
-	return m, tea.Batch(
-		tea.ClearScreen,
-		m.loadLocalCmd(m.browser.localPanel.path, m.browser.localPanel.filter),
-		m.loadRemoteCmd(m.browser.remotePanel.path, m.browser.remotePanel.filter),
-	)
-}
-
-func (m *Model) handleBrowserSessionFailure(err error) (tea.Model, tea.Cmd) {
-	m.closeBrowserSession()
-	m.page = pageHome
-	m.overlay = overlayNone
-	m.browser.localPanel.loading = false
-	m.browser.remotePanel.loading = false
-	m.setErrorStatus(err)
-	return m, tea.Batch(tea.ClearScreen, m.loadConnectionsCmd())
 }
 
 func isBrowserSessionError(err error) bool {

@@ -57,6 +57,8 @@ type browserInputMode int
 const (
 	browserInputGoto browserInputMode = iota
 	browserInputFilter
+	browserInputMkdir
+	browserInputRename
 )
 
 type confirmAction int
@@ -66,10 +68,11 @@ const (
 	confirmActionDeleteConnection
 	confirmActionDeleteGroup
 	confirmActionBrowserOverwrite
+	confirmActionBrowserDelete
 )
 
 type AppResult struct {
-	ShellSession app.RemoteSession
+	ShellSession app.ShellSession
 }
 
 type shellState struct {
@@ -156,7 +159,8 @@ type importState struct {
 type browserState struct {
 	connectionID int64
 	connection   domain.Connection
-	session      app.RemoteSession
+	// 文件工作区只持有文件会话，避免重新依赖交互 shell 能力。
+	session app.FileSession
 
 	localPanel  filePanel
 	remotePanel filePanel
@@ -164,15 +168,17 @@ type browserState struct {
 
 	inputMode browserInputMode
 	input     textinput.Model
-	pending   *browserTransfer
+	inputItem domain.FileEntry
+	// pending 只保存“已经完成存在性判断、等待用户最终确认”的操作。
+	// 这样 confirm 只负责确认交互，真正的执行与刷新策略仍由 workflow 统一编排。
+	pending *browserPendingOperation
 }
 
-type browserTransfer struct {
+type browserPendingOperation struct {
 	action   string
-	source   string
-	target   string
 	run      func(func(domain.TransferProgress)) error
 	success  string
+	cancel   string
 	panel    domain.FilePanel
 	selectBy string
 }

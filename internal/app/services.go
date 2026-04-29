@@ -7,33 +7,48 @@ import (
 	"path/filepath"
 	"sort"
 	"sshm/internal/domain"
-	"sshm/internal/security"
-	"sshm/internal/store/sqlite"
 	"strings"
 )
 
 var ErrRemoteSessionClosed = errors.New("remote session is closed")
 
-type RemoteSession interface {
+// ShellSession 表示用于进入交互式远端终端的会话。
+type ShellSession interface {
 	OpenShell() error
-	ListRemote(targetPath string) ([]domain.FileEntry, string, error)
-	PathExists(targetPath string) (bool, error)
-	Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error
-	Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error
-	HomeDir() (string, error)
 	Close() error
 }
 
-type RemoteClient interface {
+// FileSession 表示用于文件工作区的远端文件会话。
+//
+// 设计说明：
+// 1. 这里只暴露文件工作区真正需要的能力，明确禁止回流到 shell / 命令执行链路。
+// 2. 覆盖确认所需的存在性检查保留在会话层，避免 UI 为此重新拼装额外的远端请求入口。
+// 3. 路径过滤、选中态、刷新策略都由 UI 持有；app 层只负责返回目录快照与执行文件操作。
+type FileSession interface {
+	ListRemote(targetPath string) ([]domain.FileEntry, string, error)
+	PathExists(targetPath string) (bool, error)
+	Mkdir(targetPath string) error
+	Remove(targetPath string) error
+	Rename(sourcePath string, targetPath string) error
+	Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error
+	Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error
+	Close() error
+}
+
+type ShellClient interface {
 	ProbeShell(conn domain.Connection, password string) error
-	OpenSession(conn domain.Connection, password string) (RemoteSession, error)
+	OpenSession(conn domain.Connection, password string) (ShellSession, error)
 	OpenShell(conn domain.Connection, password string) error
 	RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error
-	ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error)
-	PathExists(conn domain.Connection, password string, targetPath string) (bool, error)
-	Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error
-	Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error
-	HomeDir(conn domain.Connection, password string) (string, error)
+}
+
+type FileClient interface {
+	OpenFileSession(conn domain.Connection, password string) (FileSession, error)
+}
+
+type RemoteClient interface {
+	ShellClient
+	FileClient
 }
 
 type Services struct {
@@ -44,7 +59,7 @@ type Services struct {
 	Files       *FileService
 }
 
-func NewServices(repo *sqlite.Repository, crypto *security.Crypto, remote RemoteClient, defaultPrivateKeyPath string) *Services {
+func NewServices(repo Repository, crypto CryptoProvider, remote RemoteClient, defaultPrivateKeyPath string) *Services {
 	if strings.TrimSpace(defaultPrivateKeyPath) == "" {
 		defaultPrivateKeyPath = "~/.ssh/id_rsa"
 	}
@@ -59,8 +74,8 @@ func NewServices(repo *sqlite.Repository, crypto *security.Crypto, remote Remote
 }
 
 type ConnectionService struct {
-	repo                  *sqlite.Repository
-	crypto                *security.Crypto
+	repo                  Repository
+	crypto                CryptoProvider
 	defaultPrivateKeyPath string
 }
 
@@ -209,51 +224,25 @@ func (s *ConnectionService) buildUpdate(current domain.Connection, input domain.
 }
 
 type SessionService struct {
-	repo   *sqlite.Repository
-	crypto *security.Crypto
-	remote RemoteClient
+	repo   Repository
+	crypto CryptoProvider
+	remote ShellClient
 }
 
-type managedRemoteSession struct {
+type managedShellSession struct {
 	connectionID int64
-	repo         *sqlite.Repository
-	inner        RemoteSession
+	repo         Repository
+	inner        ShellSession
 }
 
-func (s *managedRemoteSession) OpenShell() error {
+func (s *managedShellSession) OpenShell() error {
 	if err := s.inner.OpenShell(); err != nil {
 		return err
 	}
 	return s.repo.MarkUsed(s.connectionID)
 }
 
-func (s *managedRemoteSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
-	return s.inner.ListRemote(targetPath)
-}
-
-func (s *managedRemoteSession) PathExists(targetPath string) (bool, error) {
-	return s.inner.PathExists(targetPath)
-}
-
-func (s *managedRemoteSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
-	if err := s.inner.Upload(localPath, remoteDir, progress); err != nil {
-		return err
-	}
-	return s.repo.MarkUsed(s.connectionID)
-}
-
-func (s *managedRemoteSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
-	if err := s.inner.Download(remotePath, localDir, progress); err != nil {
-		return err
-	}
-	return s.repo.MarkUsed(s.connectionID)
-}
-
-func (s *managedRemoteSession) HomeDir() (string, error) {
-	return s.inner.HomeDir()
-}
-
-func (s *managedRemoteSession) Close() error {
+func (s *managedShellSession) Close() error {
 	if s.inner == nil {
 		return nil
 	}
@@ -268,7 +257,7 @@ func (s *SessionService) ProbeShell(connectionID int64) error {
 	return s.remote.ProbeShell(conn, password)
 }
 
-func (s *SessionService) OpenSession(connectionID int64) (RemoteSession, error) {
+func (s *SessionService) OpenSession(connectionID int64) (ShellSession, error) {
 	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
 	if err != nil {
 		return nil, err
@@ -277,7 +266,7 @@ func (s *SessionService) OpenSession(connectionID int64) (RemoteSession, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &managedRemoteSession{
+	return &managedShellSession{
 		connectionID: connectionID,
 		repo:         s.repo,
 		inner:        session,
@@ -307,52 +296,119 @@ func (s *SessionService) RunCommand(connectionID int64, command string, stdout i
 }
 
 type FileService struct {
-	repo   *sqlite.Repository
-	crypto *security.Crypto
-	remote RemoteClient
+	repo   Repository
+	crypto CryptoProvider
+	remote FileClient
+}
+
+// managedFileSession 负责把“文件操作成功后更新 LastUsedAt”的横切逻辑收口在 app 层。
+//
+// 这样 transport 只关心 SSH/SFTP 语义，UI 也不用在每个文件动作完成后自行补记使用时间。
+type managedFileSession struct {
+	connectionID int64
+	repo         Repository
+	inner        FileSession
+}
+
+func (s *managedFileSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
+	return s.inner.ListRemote(targetPath)
+}
+
+func (s *managedFileSession) PathExists(targetPath string) (bool, error) {
+	return s.inner.PathExists(targetPath)
+}
+
+func (s *managedFileSession) Mkdir(targetPath string) error {
+	if err := s.inner.Mkdir(targetPath); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedFileSession) Remove(targetPath string) error {
+	if err := s.inner.Remove(targetPath); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedFileSession) Rename(sourcePath string, targetPath string) error {
+	if err := s.inner.Rename(sourcePath, targetPath); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedFileSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	if err := s.inner.Upload(localPath, remoteDir, progress); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedFileSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	if err := s.inner.Download(remotePath, localDir, progress); err != nil {
+		return err
+	}
+	return s.repo.MarkUsed(s.connectionID)
+}
+
+func (s *managedFileSession) Close() error {
+	if s.inner == nil {
+		return nil
+	}
+	return s.inner.Close()
+}
+
+func (s *FileService) OpenSession(connectionID int64) (FileSession, error) {
+	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	session, err := s.remote.OpenFileSession(conn, password)
+	if err != nil {
+		return nil, err
+	}
+	return &managedFileSession{
+		connectionID: connectionID,
+		repo:         s.repo,
+		inner:        session,
+	}, nil
 }
 
 func (s *FileService) LoadConnection(id int64) (domain.Connection, error) {
 	return s.repo.GetConnection(id)
 }
 
-func (s *FileService) HomeDir(connectionID int64) (string, error) {
-	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
-	if err != nil {
-		return "", err
-	}
-	return s.remote.HomeDir(conn, password)
-}
-
-func (s *FileService) ListLocal(targetPath string, filter string) ([]domain.FileEntry, string, error) {
+// ListLocal / ListRemote 只返回当前路径的完整快照。
+//
+// 过滤条件属于 UI 文件面板状态，必须留在 ui 层持有，否则 app 会再次耦合页面交互细节。
+func (s *FileService) ListLocal(targetPath string) ([]domain.FileEntry, string, error) {
 	currentPath := expandPath(targetPath)
 	if strings.TrimSpace(currentPath) == "" {
 		wd, err := os.Getwd()
 		if err != nil {
-			return nil, "", err
+			return nil, "", domain.WrapFileError(domain.LocalPanel, domain.FileOpList, currentPath, "", err)
 		}
 		currentPath = wd
 	}
 	currentPath = filepath.Clean(currentPath)
 	items, err := os.ReadDir(currentPath)
 	if err != nil {
-		return nil, "", err
+		return nil, "", domain.WrapFileError(domain.LocalPanel, domain.FileOpList, currentPath, "", err)
 	}
-	query := strings.ToLower(strings.TrimSpace(filter))
 	entries := make([]domain.FileEntry, 0, len(items))
 	for _, item := range items {
 		info, err := item.Info()
 		if err != nil {
-			return nil, "", err
-		}
-		if query != "" && !strings.Contains(strings.ToLower(item.Name()), query) {
-			continue
+			return nil, "", domain.WrapFileError(domain.LocalPanel, domain.FileOpList, filepath.Join(currentPath, item.Name()), "", err)
 		}
 		entries = append(entries, domain.FileEntry{
 			Name:    item.Name(),
 			Path:    filepath.Join(currentPath, item.Name()),
 			Size:    info.Size(),
 			ModTime: info.ModTime(),
+			Mode:    info.Mode(),
 			IsDir:   item.IsDir(),
 			Panel:   domain.LocalPanel,
 		})
@@ -361,26 +417,13 @@ func (s *FileService) ListLocal(targetPath string, filter string) ([]domain.File
 	return entries, currentPath, nil
 }
 
-func (s *FileService) ListRemote(connectionID int64, targetPath string, filter string) ([]domain.FileEntry, string, error) {
-	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+func (s *FileService) ListRemote(connectionID int64, targetPath string) ([]domain.FileEntry, string, error) {
+	session, err := s.OpenSession(connectionID)
 	if err != nil {
 		return nil, "", err
 	}
-	entries, currentPath, err := s.remote.ListRemote(conn, password, targetPath)
-	if err != nil {
-		return nil, "", err
-	}
-	query := strings.ToLower(strings.TrimSpace(filter))
-	if query == "" {
-		return entries, currentPath, nil
-	}
-	filtered := make([]domain.FileEntry, 0, len(entries))
-	for _, entry := range entries {
-		if strings.Contains(strings.ToLower(entry.Name), query) {
-			filtered = append(filtered, entry)
-		}
-	}
-	return filtered, currentPath, nil
+	defer session.Close()
+	return session.ListRemote(targetPath)
 }
 
 func (s *FileService) ExistsLocal(targetPath string) (bool, error) {
@@ -391,40 +434,49 @@ func (s *FileService) ExistsLocal(targetPath string) (bool, error) {
 	if os.IsNotExist(err) {
 		return false, nil
 	}
-	return false, err
+	return false, domain.WrapFileError(domain.LocalPanel, domain.FileOpStat, targetPath, "", err)
+}
+
+func (s *FileService) MkdirLocal(targetPath string) error {
+	return domain.WrapFileError(domain.LocalPanel, domain.FileOpMkdir, targetPath, "", os.Mkdir(targetPath, 0755))
+}
+
+func (s *FileService) RemoveLocal(targetPath string) error {
+	return domain.WrapFileError(domain.LocalPanel, domain.FileOpRemove, targetPath, "", os.RemoveAll(targetPath))
+}
+
+func (s *FileService) RenameLocal(sourcePath string, targetPath string) error {
+	return domain.WrapFileError(domain.LocalPanel, domain.FileOpRename, sourcePath, targetPath, os.Rename(sourcePath, targetPath))
 }
 
 func (s *FileService) ExistsRemote(connectionID int64, targetPath string) (bool, error) {
-	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	session, err := s.OpenSession(connectionID)
 	if err != nil {
 		return false, err
 	}
-	return s.remote.PathExists(conn, password, targetPath)
+	defer session.Close()
+	return session.PathExists(targetPath)
 }
 
 func (s *FileService) Upload(connectionID int64, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
-	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	session, err := s.OpenSession(connectionID)
 	if err != nil {
 		return err
 	}
-	if err := s.remote.Upload(conn, password, localPath, remoteDir, progress); err != nil {
-		return err
-	}
-	return s.repo.MarkUsed(connectionID)
+	defer session.Close()
+	return session.Upload(localPath, remoteDir, progress)
 }
 
 func (s *FileService) Download(connectionID int64, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
-	conn, password, err := loadConnectionWithPassword(s.repo, s.crypto, connectionID)
+	session, err := s.OpenSession(connectionID)
 	if err != nil {
 		return err
 	}
-	if err := s.remote.Download(conn, password, remotePath, localDir, progress); err != nil {
-		return err
-	}
-	return s.repo.MarkUsed(connectionID)
+	defer session.Close()
+	return session.Download(remotePath, localDir, progress)
 }
 
-func loadConnectionWithPassword(repo *sqlite.Repository, crypto *security.Crypto, connectionID int64) (domain.Connection, string, error) {
+func loadConnectionWithPassword(repo Repository, crypto CryptoProvider, connectionID int64) (domain.Connection, string, error) {
 	conn, err := repo.GetConnection(connectionID)
 	if err != nil {
 		return domain.Connection{}, "", err
@@ -482,7 +534,7 @@ func validateConnectionInput(input domain.ConnectionInput, defaultPrivateKeyPath
 }
 
 type GroupService struct {
-	repo *sqlite.Repository
+	repo Repository
 }
 
 func (s *GroupService) List() ([]domain.ConnectionGroupListItem, error) {

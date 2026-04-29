@@ -51,6 +51,10 @@ func (t *Translator) Error(err error) string {
 	if err == nil {
 		return ""
 	}
+	var fileErr *domain.FileError
+	if errors.As(err, &fileErr) {
+		return t.formatFileError(fileErr)
+	}
 	var translatable domain.TranslatableError
 	if errors.As(err, &translatable) {
 		return t.T(translatable.TranslationKey(), translatable.TranslationArgs()...)
@@ -72,6 +76,56 @@ func (t *Translator) Error(err error) string {
 		return t.T(key)
 	}
 	return message
+}
+
+func (t *Translator) formatFileError(err *domain.FileError) string {
+	if err == nil {
+		return ""
+	}
+	pathValue := strings.TrimSpace(err.Path)
+	if strings.TrimSpace(err.TargetPath) != "" {
+		pathValue = strings.TrimSpace(pathValue + " -> " + err.TargetPath)
+	}
+	if pathValue == "" {
+		pathValue = "-"
+	}
+	cause := err.Cause.Error()
+	if translated := t.Error(err.Cause); translated != "" {
+		cause = translated
+	}
+	return t.T("err.file_operation_failed", t.filePanelLabel(err.Panel), t.fileOperationLabel(err.Op), pathValue, cause)
+}
+
+func (t *Translator) filePanelLabel(panel domain.FilePanel) string {
+	switch panel {
+	case domain.RemotePanel:
+		return t.T("err.file_panel_remote")
+	default:
+		return t.T("err.file_panel_local")
+	}
+}
+
+func (t *Translator) fileOperationLabel(op domain.FileOperation) string {
+	switch op {
+	case domain.FileOpList:
+		return t.T("err.file_op_list")
+	case domain.FileOpStat:
+		return t.T("err.file_op_stat")
+	case domain.FileOpMkdir:
+		return t.T("err.file_op_mkdir")
+	case domain.FileOpRemove:
+		return t.T("err.file_op_remove")
+	case domain.FileOpRename:
+		return t.T("err.file_op_rename")
+	case domain.FileOpUpload:
+		return t.T("err.file_op_upload")
+	case domain.FileOpDownload:
+		return t.T("err.file_op_download")
+	case domain.FileOpResolve:
+		return t.T("err.file_op_resolve")
+	default:
+		return string(op)
+	}
 }
 
 func errorKey(message string) string {
@@ -102,6 +156,14 @@ func errorKey(message string) string {
 		return "err.group_name_required"
 	case message == "group is required":
 		return "err.group_required"
+	case message == "file name is required":
+		return "err.file_name_required"
+	case message == "path is required":
+		return "err.path_required"
+	case message == "file name must not contain path separators":
+		return "err.file_name_path_separator"
+	case message == "refusing to delete remote root or its direct children":
+		return "err.remote_delete_root_protected"
 	default:
 		return ""
 	}
@@ -136,6 +198,9 @@ var english = map[string]string{
 	"status.uploaded":                    "Uploaded %s",
 	"status.downloading":                 "Downloading",
 	"status.downloaded":                  "Downloaded %s",
+	"status.browser_dir_created":         "Created directory %s",
+	"status.browser_renamed":             "Renamed %s to %s",
+	"status.browser_deleted":             "Deleted %s",
 	"status.group_filter_cleared":        "Returned to all connections",
 	"status.group_created":               "Created group %s",
 	"status.group_renamed":               "Renamed group to %s",
@@ -219,14 +284,18 @@ var english = map[string]string{
 	"form.shortcut_cancel":               "cancel",
 	"browser.local":                      "Local",
 	"browser.remote":                     "Remote",
-	"browser.title":                      "SSH/SCP file transfer",
+	"browser.title":                      "SFTP workspace",
 	"browser.subtitle":                   "%s@%s",
 	"browser.filter_label":               "(Filter: %s)",
 	"browser.empty":                      "<empty>",
 	"browser.loading":                    "loading...",
 	"browser.path":                       "Path",
 	"browser.filter":                     "Filter",
+	"browser.mkdir":                      "New Directory",
+	"browser.rename":                     "Rename",
 	"browser.overwrite":                  "Overwrite target?",
+	"browser.delete_title":               "Delete selected item?",
+	"browser.delete_desc":                "This will permanently remove %s.",
 	"browser.yes":                        "Yes",
 	"browser.no":                         "No",
 	"browser.active_path":                "Active: %s    Path: %s",
@@ -277,6 +346,9 @@ var english = map[string]string{
 	"shortcut.top":                       "top",
 	"shortcut.filter":                    "filter",
 	"shortcut.goto":                      "goto",
+	"shortcut.new_dir":                   "new dir",
+	"shortcut.rename":                    "rename",
+	"shortcut.delete":                    "delete",
 	"shortcut.upload":                    "upload",
 	"shortcut.download":                  "download",
 	"shortcut.refresh":                   "refresh",
@@ -307,6 +379,9 @@ var english = map[string]string{
 	"palette.browser.switch":             "Switch active panel",
 	"palette.browser.filter":             "Filter active panel",
 	"palette.browser.goto":               "Jump to path",
+	"palette.browser.mkdir":              "Create directory in active panel",
+	"palette.browser.rename":             "Rename selected item",
+	"palette.browser.delete":             "Delete selected item",
 	"palette.browser.refresh":            "Refresh both panels",
 	"palette.browser.top":                "Move cursor to top",
 	"palette.browser.back":               "Return to home",
@@ -371,22 +446,38 @@ Notes:
   Starting without arguments enters the TUI.
   version prints the current build version.
 `,
-	"err.connection_not_found":        "connection not found",
-	"err.connection_secret_not_found": "connection secret not found",
-	"err.connection_name_not_found":   "connection %s not found",
-	"err.connection_name_duplicated":  "connection name %s is duplicated",
-	"err.connection_name_required":    "connection name is required",
-	"err.name_required":               "name is required",
-	"err.host_required":               "host is required",
-	"err.username_required":           "username is required",
-	"err.port_range":                  "port must be between 1 and 65535",
-	"err.password_required":           "password is required",
-	"err.unsupported_auth_type":       "unsupported auth type",
-	"err.interactive_terminal":        "interactive shell requires a terminal",
-	"err.unsupported_language":        "unsupported language",
-	"err.database_path_required":      "database path is required",
-	"err.group_name_required":         "group name is required",
-	"err.group_required":              "group is required",
+	"err.connection_not_found":         "connection not found",
+	"err.connection_secret_not_found":  "connection secret not found",
+	"err.connection_name_not_found":    "connection %s not found",
+	"err.connection_name_duplicated":   "connection name %s is duplicated",
+	"err.connection_name_required":     "connection name is required",
+	"err.name_required":                "name is required",
+	"err.host_required":                "host is required",
+	"err.username_required":            "username is required",
+	"err.port_range":                   "port must be between 1 and 65535",
+	"err.password_required":            "password is required",
+	"err.unsupported_auth_type":        "unsupported auth type",
+	"err.interactive_terminal":         "interactive shell requires a terminal",
+	"err.unsupported_language":         "unsupported language",
+	"err.database_path_required":       "database path is required",
+	"err.group_name_required":          "group name is required",
+	"err.group_required":               "group is required",
+	"err.file_name_required":           "file name is required",
+	"err.path_required":                "path is required",
+	"err.file_name_path_separator":     "file name must not contain path separators",
+	"err.browser_session_not_ready":    "file workspace session is not ready",
+	"err.remote_delete_root_protected": "refusing to delete remote root or its direct children",
+	"err.file_operation_failed":        "%s %s failed (%s): %s",
+	"err.file_panel_local":             "local",
+	"err.file_panel_remote":            "remote",
+	"err.file_op_list":                 "list",
+	"err.file_op_stat":                 "check",
+	"err.file_op_mkdir":                "create directory",
+	"err.file_op_remove":               "remove",
+	"err.file_op_rename":               "rename",
+	"err.file_op_upload":               "upload",
+	"err.file_op_download":             "download",
+	"err.file_op_resolve":              "resolve path",
 }
 
 var chinese = map[string]string{
@@ -418,6 +509,9 @@ var chinese = map[string]string{
 	"status.uploaded":                    "已上传 %s",
 	"status.downloading":                 "正在下载",
 	"status.downloaded":                  "已下载 %s",
+	"status.browser_dir_created":         "已创建目录 %s",
+	"status.browser_renamed":             "已将 %s 重命名为 %s",
+	"status.browser_deleted":             "已删除 %s",
 	"status.group_filter_cleared":        "已返回全部连接",
 	"status.group_created":               "已创建分组 %s",
 	"status.group_renamed":               "已重命名分组为 %s",
@@ -501,14 +595,18 @@ var chinese = map[string]string{
 	"form.shortcut_cancel":               "取消",
 	"browser.local":                      "本地",
 	"browser.remote":                     "远端",
-	"browser.title":                      "SSH/SCP 文件传输",
+	"browser.title":                      "SFTP 文件工作区",
 	"browser.subtitle":                   "%s@%s",
 	"browser.filter_label":               "（过滤：%s）",
 	"browser.empty":                      "<空>",
 	"browser.loading":                    "加载中...",
 	"browser.path":                       "路径",
 	"browser.filter":                     "过滤",
+	"browser.mkdir":                      "新建目录",
+	"browser.rename":                     "重命名",
 	"browser.overwrite":                  "覆盖目标？",
+	"browser.delete_title":               "删除选中项？",
+	"browser.delete_desc":                "这会永久删除 %s。",
 	"browser.confirm_source":             "来源：%s",
 	"browser.confirm_target":             "目标：%s",
 	"browser.yes":                        "是",
@@ -561,6 +659,9 @@ var chinese = map[string]string{
 	"shortcut.top":                       "顶部",
 	"shortcut.filter":                    "过滤",
 	"shortcut.goto":                      "跳转",
+	"shortcut.new_dir":                   "新建目录",
+	"shortcut.rename":                    "重命名",
+	"shortcut.delete":                    "删除",
 	"shortcut.upload":                    "上传",
 	"shortcut.download":                  "下载",
 	"shortcut.refresh":                   "刷新",
@@ -591,6 +692,9 @@ var chinese = map[string]string{
 	"palette.browser.switch":             "切换活动面板",
 	"palette.browser.filter":             "过滤当前面板",
 	"palette.browser.goto":               "跳转路径",
+	"palette.browser.mkdir":              "在当前面板新建目录",
+	"palette.browser.rename":             "重命名选中项",
+	"palette.browser.delete":             "删除选中项",
 	"palette.browser.refresh":            "刷新双面板",
 	"palette.browser.top":                "光标回到顶部",
 	"palette.browser.back":               "返回主页",
@@ -655,20 +759,36 @@ var chinese = map[string]string{
   无参数启动时进入 TUI。
   version 显示当前构建版本。
 `,
-	"err.connection_not_found":        "连接不存在",
-	"err.connection_secret_not_found": "连接密码不存在",
-	"err.connection_name_not_found":   "连接 %s 不存在",
-	"err.connection_name_duplicated":  "连接名称 %s 重复",
-	"err.connection_name_required":    "连接名称不能为空",
-	"err.name_required":               "名称不能为空",
-	"err.host_required":               "主机不能为空",
-	"err.username_required":           "用户名不能为空",
-	"err.port_range":                  "端口必须在 1 到 65535 之间",
-	"err.password_required":           "密码不能为空",
-	"err.unsupported_auth_type":       "不支持的认证方式",
-	"err.interactive_terminal":        "交互式 Shell 需要终端环境",
-	"err.unsupported_language":        "不支持的语言",
-	"err.database_path_required":      "数据库路径不能为空",
-	"err.group_name_required":         "分组名称不能为空",
-	"err.group_required":              "分组不能为空",
+	"err.connection_not_found":         "连接不存在",
+	"err.connection_secret_not_found":  "连接密码不存在",
+	"err.connection_name_not_found":    "连接 %s 不存在",
+	"err.connection_name_duplicated":   "连接名称 %s 重复",
+	"err.connection_name_required":     "连接名称不能为空",
+	"err.name_required":                "名称不能为空",
+	"err.host_required":                "主机不能为空",
+	"err.username_required":            "用户名不能为空",
+	"err.port_range":                   "端口必须在 1 到 65535 之间",
+	"err.password_required":            "密码不能为空",
+	"err.unsupported_auth_type":        "不支持的认证方式",
+	"err.interactive_terminal":         "交互式 Shell 需要终端环境",
+	"err.unsupported_language":         "不支持的语言",
+	"err.database_path_required":       "数据库路径不能为空",
+	"err.group_name_required":          "分组名称不能为空",
+	"err.group_required":               "分组不能为空",
+	"err.file_name_required":           "名称不能为空",
+	"err.path_required":                "路径不能为空",
+	"err.file_name_path_separator":     "名称不能包含路径分隔符",
+	"err.browser_session_not_ready":    "文件工作区会话尚未就绪",
+	"err.remote_delete_root_protected": "禁止删除远端根目录 / 及其直属子项",
+	"err.file_operation_failed":        "%s%s失败（%s）：%s",
+	"err.file_panel_local":             "本地",
+	"err.file_panel_remote":            "远端",
+	"err.file_op_list":                 "列目录",
+	"err.file_op_stat":                 "检查路径",
+	"err.file_op_mkdir":                "创建目录",
+	"err.file_op_remove":               "删除",
+	"err.file_op_rename":               "重命名",
+	"err.file_op_upload":               "上传",
+	"err.file_op_download":             "下载",
+	"err.file_op_resolve":              "解析路径",
 }

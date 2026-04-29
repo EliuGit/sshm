@@ -34,12 +34,25 @@ func (m *Model) openDeleteGroupConfirm(item domain.ConnectionGroupListItem) {
 	}
 }
 
-func (m *Model) openBrowserOverwriteConfirm(sourcePath string, targetPath string, pending *browserTransfer) {
+func (m *Model) openBrowserOverwriteConfirm(sourcePath string, targetPath string, pending *browserPendingOperation) {
 	m.confirm = confirmState{
 		action:           confirmActionBrowserOverwrite,
 		title:            m.translator.T("browser.overwrite"),
 		sourcePath:       sourcePath,
 		targetPath:       targetPath,
+		choiceEnabled:    true,
+		confirmSelection: false,
+	}
+	m.overlay = overlayBrowserConfirm
+	m.browser.pending = pending
+}
+
+func (m *Model) openBrowserDeleteConfirm(entry domain.FileEntry, pending *browserPendingOperation) {
+	m.confirm = confirmState{
+		action:           confirmActionBrowserDelete,
+		title:            m.translator.T("browser.delete_title"),
+		description:      m.translator.T("browser.delete_desc", entry.Name),
+		sourcePath:       entry.Path,
 		choiceEnabled:    true,
 		confirmSelection: false,
 	}
@@ -53,8 +66,8 @@ func (m *Model) handleConfirmKey(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 		return m.handleDeleteConnectionConfirmKey(keyMsg)
 	case confirmActionDeleteGroup:
 		return m.handleDeleteGroupConfirmKey(keyMsg)
-	case confirmActionBrowserOverwrite:
-		return m.handleBrowserOverwriteConfirmKey(keyMsg)
+	case confirmActionBrowserOverwrite, confirmActionBrowserDelete:
+		return m.handleBrowserPendingConfirmKey(keyMsg)
 	default:
 		return m, nil, false
 	}
@@ -96,7 +109,7 @@ func (m *Model) handleDeleteGroupConfirmKey(keyMsg tea.KeyMsg) (tea.Model, tea.C
 	}
 }
 
-func (m *Model) handleBrowserOverwriteConfirmKey(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+func (m *Model) handleBrowserPendingConfirmKey(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
 	switch keyMsg.String() {
 	case "tab", "left", "right", "h", "l":
 		if !m.confirm.choiceEnabled {
@@ -105,17 +118,17 @@ func (m *Model) handleBrowserOverwriteConfirmKey(keyMsg tea.KeyMsg) (tea.Model, 
 		m.confirm.confirmSelection = !m.confirm.confirmSelection
 		return m, nil, true
 	case "y":
-		next, cmd := m.runPendingBrowserTransfer()
+		next, cmd := m.runPendingBrowserOperation()
 		return next, cmd, true
 	case "enter":
 		if m.confirm.choiceEnabled && !m.confirm.confirmSelection {
-			next, cmd := m.cancelBrowserOverwriteConfirm()
+			next, cmd := m.cancelBrowserPendingConfirm()
 			return next, cmd, true
 		}
-		next, cmd := m.runPendingBrowserTransfer()
+		next, cmd := m.runPendingBrowserOperation()
 		return next, cmd, true
 	case "n", "esc":
-		next, cmd := m.cancelBrowserOverwriteConfirm()
+		next, cmd := m.cancelBrowserPendingConfirm()
 		return next, cmd, true
 	case "q":
 		return m, nil, true
@@ -124,15 +137,22 @@ func (m *Model) handleBrowserOverwriteConfirmKey(keyMsg tea.KeyMsg) (tea.Model, 
 	}
 }
 
-func (m *Model) cancelBrowserOverwriteConfirm() (tea.Model, tea.Cmd) {
+func (m *Model) cancelBrowserPendingConfirm() (tea.Model, tea.Cmd) {
+	status := m.translator.T("status.cancelled")
+	if m.confirm.action == confirmActionBrowserOverwrite {
+		status = m.translator.T("status.transfer_cancelled")
+	}
+	if m.browser.pending != nil && m.browser.pending.cancel != "" {
+		status = m.browser.pending.cancel
+	}
 	m.clearConfirm()
 	m.overlay = overlayNone
 	m.browser.pending = nil
-	m.setInfoStatus(m.translator.T("status.transfer_cancelled"))
+	m.setInfoStatus(status)
 	return m, nil
 }
 
-func (m *Model) runPendingBrowserTransfer() (tea.Model, tea.Cmd) {
+func (m *Model) runPendingBrowserOperation() (tea.Model, tea.Cmd) {
 	pending := m.browser.pending
 	m.clearConfirm()
 	m.overlay = overlayNone
@@ -140,29 +160,7 @@ func (m *Model) runPendingBrowserTransfer() (tea.Model, tea.Cmd) {
 	if pending == nil {
 		return m, nil
 	}
-	progressCh := make(chan transferProgressMsg, 16)
-	return m, tea.Batch(
-		func() tea.Msg {
-			err := pending.run(func(progress domain.TransferProgress) {
-				select {
-				case progressCh <- transferProgressMsg{progress: progress, action: pending.action, source: progressCh}:
-				default:
-				}
-			})
-			close(progressCh)
-			if err != nil {
-				return opDoneMsg{err: err}
-			}
-			return opDoneMsg{
-				status:        pending.success,
-				success:       true,
-				reloadBrowser: true,
-				targetPanel:   pending.panel,
-				selectName:    pending.selectBy,
-			}
-		},
-		listenTransferProgress(progressCh),
-	)
+	return m, m.browserWorkflow().runOperationCmd(pending)
 }
 
 func (m *Model) confirmSourceText(width int) string {

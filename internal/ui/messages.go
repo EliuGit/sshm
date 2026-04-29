@@ -41,15 +41,8 @@ type importDoneMsg struct {
 	groupName         string
 }
 
-type localLoadedMsg struct {
-	items      []domain.FileEntry
-	path       string
-	selectName string
-	request    int
-	err        error
-}
-
-type remoteLoadedMsg struct {
+type browserLoadedMsg struct {
+	panel      domain.FilePanel
 	items      []domain.FileEntry
 	path       string
 	selectName string
@@ -58,7 +51,7 @@ type remoteLoadedMsg struct {
 }
 
 type shellReadyMsg struct {
-	session app.RemoteSession
+	session app.ShellSession
 }
 
 type homeProbeAction int
@@ -72,7 +65,8 @@ type homeProbeDoneMsg struct {
 	action         homeProbeAction
 	connectionName string
 	connection     Connection
-	session        app.RemoteSession
+	shellSession   app.ShellSession
+	fileSession    app.FileSession
 	err            error
 }
 

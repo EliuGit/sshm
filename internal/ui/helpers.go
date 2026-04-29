@@ -9,6 +9,7 @@ import (
 	"sshm/internal/i18n"
 	"sshm/internal/themes"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -154,6 +155,20 @@ func renderTransferProgress(action string, progress domain.TransferProgress) str
 	}
 	percent := float64(progress.Bytes) * 100 / float64(progress.Total)
 	return fmt.Sprintf("%s %s %s/%s (%.0f%%)", action, progress.Path, humanSize(progress.Bytes), humanSize(progress.Total), percent)
+}
+
+func renderBrowserEntryMeta(entry domain.FileEntry) string {
+	parts := []string{}
+	if entry.Mode != 0 {
+		parts = append(parts, entry.Mode.String())
+	}
+	if !entry.ModTime.IsZero() {
+		parts = append(parts, entry.ModTime.In(time.Local).Format("2006-01-02 15:04"))
+	}
+	if entry.Size >= 0 {
+		parts = append(parts, humanSize(entry.Size))
+	}
+	return strings.Join(parts, "  ")
 }
 
 func listenTransferProgress(source <-chan transferProgressMsg) tea.Cmd {

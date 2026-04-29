@@ -6,12 +6,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
-	"text/tabwriter"
 	"sshm/internal/app"
 	"sshm/internal/buildinfo"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"strings"
+	"text/tabwriter"
 )
 
 const (
@@ -172,7 +172,7 @@ func (c *Command) runCommand(parsed task) int {
 		}
 		if err := c.services.Sessions.RunCommand(conn.ID, commandText, stdout, stderr); err != nil {
 			failed = true
-			fmt.Fprintf(c.stderr, c.t("cli.run.failed"), conn.Name, err)
+			fmt.Fprintf(c.stderr, c.t("cli.run.failed"), conn.Name, c.cliError(err))
 			if parsed.failFast {
 				break
 			}
@@ -202,7 +202,7 @@ func (c *Command) upload(parsed task) int {
 		exists, err := c.services.Files.ExistsRemote(conn.ID, targetPath)
 		if err != nil {
 			failed = true
-			fmt.Fprintf(c.stderr, c.t("cli.upload.check_failed"), conn.Name, err)
+			fmt.Fprintf(c.stderr, c.t("cli.upload.check_failed"), conn.Name, c.cliError(err))
 			if parsed.failFast {
 				break
 			}
@@ -218,7 +218,7 @@ func (c *Command) upload(parsed task) int {
 		}
 		if err := c.services.Files.Upload(conn.ID, localPath, parsed.remote, nil); err != nil {
 			failed = true
-			fmt.Fprintf(c.stderr, c.t("cli.upload.failed"), conn.Name, err)
+			fmt.Fprintf(c.stderr, c.t("cli.upload.failed"), conn.Name, c.cliError(err))
 			if parsed.failFast {
 				break
 			}
@@ -252,7 +252,7 @@ func (c *Command) download(parsed task) int {
 	fmt.Fprintf(c.stderr, c.t("cli.download.start"), conn.Name, remotePath, targetPath)
 	exists, err := c.services.Files.ExistsLocal(targetPath)
 	if err != nil {
-		fmt.Fprintf(c.stderr, c.t("cli.download.check_failed"), conn.Name, err)
+		fmt.Fprintf(c.stderr, c.t("cli.download.check_failed"), conn.Name, c.cliError(err))
 		return exitFailure
 	}
 	if exists && !parsed.force {
@@ -260,7 +260,7 @@ func (c *Command) download(parsed task) int {
 		return exitFailure
 	}
 	if err := c.services.Files.Download(conn.ID, remotePath, localDir, nil); err != nil {
-		fmt.Fprintf(c.stderr, c.t("cli.download.failed"), conn.Name, err)
+		fmt.Fprintf(c.stderr, c.t("cli.download.failed"), conn.Name, c.cliError(err))
 		return exitFailure
 	}
 	fmt.Fprintf(c.stderr, c.t("cli.download.success"), conn.Name)

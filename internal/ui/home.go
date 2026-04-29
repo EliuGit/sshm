@@ -376,14 +376,22 @@ func (m *Model) homeProbePendingStatus(action homeProbeAction, connectionName st
 
 func (m *Model) probeConnectionCmd(conn Connection, action homeProbeAction) tea.Cmd {
 	return func() tea.Msg {
-		session, err := m.services.Sessions.OpenSession(conn.ID)
-		return homeProbeDoneMsg{
+		msg := homeProbeDoneMsg{
 			action:         action,
 			connectionName: conn.Name,
 			connection:     conn,
-			session:        session,
-			err:            err,
 		}
+		switch action {
+		case homeProbeBrowser:
+			session, err := m.services.Files.OpenSession(conn.ID)
+			msg.fileSession = session
+			msg.err = err
+		default:
+			session, err := m.services.Sessions.OpenSession(conn.ID)
+			msg.shellSession = session
+			msg.err = err
+		}
+		return msg
 	}
 }
 

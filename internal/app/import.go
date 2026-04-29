@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sshm/internal/domain"
 	"strconv"
 	"strings"
-	"sshm/internal/domain"
-	"sshm/internal/store/sqlite"
 )
 
 type ImportService struct {
-	repo                  *sqlite.Repository
+	repo                  Repository
 	connections           *ConnectionService
 	defaultPrivateKeyPath string
 }

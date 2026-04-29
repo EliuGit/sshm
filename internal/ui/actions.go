@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"path/filepath"
 	"sshm/internal/domain"
 	"strings"
@@ -25,6 +24,9 @@ const (
 	commandActionBrowserSwitch   = "browser.switch"
 	commandActionBrowserFilter   = "browser.filter"
 	commandActionBrowserGoto     = "browser.goto"
+	commandActionBrowserMkdir    = "browser.mkdir"
+	commandActionBrowserRename   = "browser.rename"
+	commandActionBrowserDelete   = "browser.delete"
 	commandActionBrowserUpload   = "browser.upload"
 	commandActionBrowserDownload = "browser.download"
 	commandActionBrowserRefresh  = "browser.refresh"
@@ -88,6 +90,7 @@ func (m *Model) browserCommandActions() []commandAction {
 		{id: commandActionBrowserSwitch, title: m.translator.T("palette.browser.switch"), shortcut: "tab"},
 		{id: commandActionBrowserFilter, title: m.translator.T("palette.browser.filter"), shortcut: "/"},
 		{id: commandActionBrowserGoto, title: m.translator.T("palette.browser.goto"), shortcut: ":"},
+		{id: commandActionBrowserMkdir, title: m.translator.T("palette.browser.mkdir"), shortcut: "c-n"},
 		{id: commandActionBrowserRefresh, title: m.translator.T("palette.browser.refresh"), shortcut: "r"},
 		{id: commandActionBrowserTop, title: m.translator.T("palette.browser.top"), shortcut: "g"},
 		{id: commandActionBrowserBack, title: m.translator.T("palette.browser.back"), shortcut: "q"},
@@ -95,11 +98,17 @@ func (m *Model) browserCommandActions() []commandAction {
 	if strings.TrimSpace(m.activeBrowserPanel().filter) != "" {
 		actions = append(actions, commandAction{id: commandActionBrowserClear, title: m.translator.T("palette.browser.clear"), shortcut: "esc"})
 	}
+	if _, ok := m.activeBrowserEditableEntry(); ok {
+		actions = append(actions,
+			commandAction{id: commandActionBrowserRename, title: m.translator.T("palette.browser.rename"), shortcut: "c-r"},
+			commandAction{id: commandActionBrowserDelete, title: m.translator.T("palette.browser.delete"), shortcut: "c-d"},
+		)
+	}
 	if m.browser.activePanel == domain.LocalPanel {
 		actions = append(actions, commandAction{id: commandActionBrowserUpload, title: m.translator.T("palette.browser.upload"), shortcut: "c-u"})
 	}
 	if m.browser.activePanel == domain.RemotePanel {
-		actions = append(actions, commandAction{id: commandActionBrowserDownload, title: m.translator.T("palette.browser.download"), shortcut: "c-d"})
+		actions = append(actions, commandAction{id: commandActionBrowserDownload, title: m.translator.T("palette.browser.download"), shortcut: "c-s"})
 	}
 	return actions
 }
@@ -136,6 +145,12 @@ func (m *Model) executeCommandAction(actionID string) (tea.Model, tea.Cmd) {
 		return m.openBrowserFilterInput()
 	case commandActionBrowserGoto:
 		return m.openBrowserGotoInput()
+	case commandActionBrowserMkdir:
+		return m.openBrowserMkdirInput()
+	case commandActionBrowserRename:
+		return m.openBrowserRenameInput()
+	case commandActionBrowserDelete:
+		return m.confirmBrowserDelete()
 	case commandActionBrowserUpload:
 		return m.startBrowserUpload()
 	case commandActionBrowserDownload:
@@ -279,6 +294,7 @@ func (m *Model) openBrowserFilterInput() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
 	m.overlay = overlayBrowserInput
 	m.browser.inputMode = browserInputFilter
+	m.browser.inputItem = domain.FileEntry{}
 	m.browser.input.SetValue(m.activeBrowserPanel().filter)
 	m.browser.input.Focus()
 	return m, nil
@@ -288,6 +304,7 @@ func (m *Model) openBrowserGotoInput() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
 	m.overlay = overlayBrowserInput
 	m.browser.inputMode = browserInputGoto
+	m.browser.inputItem = domain.FileEntry{}
 	m.browser.input.SetValue(m.activeBrowserPanel().path)
 	m.browser.input.Focus()
 	return m, nil
@@ -295,7 +312,7 @@ func (m *Model) openBrowserGotoInput() (tea.Model, tea.Cmd) {
 
 func (m *Model) refreshBrowserPanels() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
-	return m, m.reloadBrowserCmd()
+	return m, m.browserWorkflow().reloadCmd()
 }
 
 func (m *Model) openActiveBrowserSelection() (tea.Model, tea.Cmd) {
@@ -331,12 +348,17 @@ func (m *Model) startBrowserUpload() (tea.Model, tea.Cmd) {
 	}
 	m.clearStaleErrorStatus()
 	targetPath := joinRemotePath(m.browser.remotePanel.path, row.Name)
-	return m.prepareTransfer(m.translator.T("status.uploading"), row.Path, targetPath, domain.RemotePanel, func(progress func(domain.TransferProgress)) error {
+	return m.browserWorkflow().prepareOperation(m.translator.T("status.uploading"), row.Path, targetPath, domain.RemotePanel, func(progress func(domain.TransferProgress)) error {
 		if m.browser.session == nil {
 			return errBrowserSessionNotReady()
 		}
 		return m.browser.session.Upload(row.Path, m.browser.remotePanel.path, progress)
-	}, m.translator.T("status.uploaded", row.Name), row.Name)
+	}, func() error {
+		if m.browser.session == nil {
+			return errBrowserSessionNotReady()
+		}
+		return m.browser.session.Remove(targetPath)
+	}, m.translator.T("status.uploaded", row.Name), row.Name, m.translator.T("status.transfer_cancelled"))
 }
 
 func (m *Model) startBrowserDownload() (tea.Model, tea.Cmd) {
@@ -350,35 +372,20 @@ func (m *Model) startBrowserDownload() (tea.Model, tea.Cmd) {
 	}
 	m.clearStaleErrorStatus()
 	targetPath := filepath.Join(m.browser.localPanel.path, row.Name)
-	return m.prepareTransfer(m.translator.T("status.downloading"), row.Path, targetPath, domain.LocalPanel, func(progress func(domain.TransferProgress)) error {
+	return m.browserWorkflow().prepareOperation(m.translator.T("status.downloading"), row.Path, targetPath, domain.LocalPanel, func(progress func(domain.TransferProgress)) error {
 		if m.browser.session == nil {
 			return errBrowserSessionNotReady()
 		}
 		return m.browser.session.Download(row.Path, m.browser.localPanel.path, progress)
-	}, m.translator.T("status.downloaded", row.Name), row.Name)
+	}, func() error {
+		return m.services.Files.RemoveLocal(targetPath)
+	}, m.translator.T("status.downloaded", row.Name), row.Name, m.translator.T("status.transfer_cancelled"))
 }
 
 func (m *Model) clearBrowserFilter() (tea.Model, tea.Cmd) {
 	return m, m.clearActiveBrowserFilter()
 }
 
-func errBrowserSessionNotReady() error {
-	return fmt.Errorf("browser session is not ready")
-}
-
 func (m *Model) navigateBrowserPath(targetPanel domain.FilePanel, path string) tea.Cmd {
-	if targetPanel == domain.LocalPanel {
-		filter := m.browser.localPanel.filter
-		if path != m.browser.localPanel.path {
-			filter = ""
-			m.browser.localPanel.filter = ""
-		}
-		return m.loadLocalCmd(path, filter)
-	}
-	filter := m.browser.remotePanel.filter
-	if path != m.browser.remotePanel.path {
-		filter = ""
-		m.browser.remotePanel.filter = ""
-	}
-	return m.loadRemoteCmd(path, filter)
+	return m.browserWorkflow().navigatePathCmd(targetPanel, path)
 }

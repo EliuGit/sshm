@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"fmt"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
 	"sshm/internal/themes"
@@ -26,11 +25,17 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 					panel.cursor = clamp(panel.cursor, len(panel.rows()))
 				}
 				m.overlay = overlayNone
+				m.browser.input.Blur()
+				m.browser.inputItem = domain.FileEntry{}
 				return m, nil
 			case "enter":
 				value := strings.TrimSpace(m.browser.input.Value())
 				mode := m.browser.inputMode
 				m.overlay = overlayNone
+				m.browser.input.Blur()
+				defer func() {
+					m.browser.inputItem = domain.FileEntry{}
+				}()
 				if mode == browserInputFilter {
 					if m.browser.activePanel == domain.LocalPanel {
 						m.browser.localPanel.filter = value
@@ -41,10 +46,19 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.browser.remotePanel.cursor = clamp(m.browser.remotePanel.cursor, len(m.browser.remotePanel.rows()))
 					return m, nil
 				}
-				if value == "" {
+				switch mode {
+				case browserInputGoto:
+					if value == "" {
+						return m, nil
+					}
+					return m, m.navigateBrowserPath(m.browser.activePanel, value)
+				case browserInputMkdir:
+					return m.submitBrowserMkdir(value)
+				case browserInputRename:
+					return m.submitBrowserRename(value)
+				default:
 					return m, nil
 				}
-				return m, m.navigateBrowserPath(m.browser.activePanel, value)
 			default:
 				var cmd tea.Cmd
 				m.clearStaleErrorStatus()
@@ -65,7 +79,7 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 
-		if m.hasActiveConfirm(confirmActionBrowserOverwrite) {
+		if m.hasActiveConfirm(confirmActionBrowserOverwrite) || m.hasActiveConfirm(confirmActionBrowserDelete) {
 			next, cmd, handled := m.handleConfirmKey(keyMsg)
 			if handled {
 				return next, cmd
@@ -99,6 +113,12 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.openBrowserFilterInput()
 		case ":":
 			return m.openBrowserGotoInput()
+		case "ctrl+n":
+			return m.openBrowserMkdirInput()
+		case "ctrl+r":
+			return m.openBrowserRenameInput()
+		case "ctrl+d":
+			return m.confirmBrowserDelete()
 		case "r":
 			return m.refreshBrowserPanels()
 		case "enter", "right", "l":
@@ -107,63 +127,11 @@ func (m *Model) updateBrowser(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.goParentBrowserDirectory()
 		case "ctrl+u":
 			return m.startBrowserUpload()
-		case "ctrl+d":
+		case "ctrl+s":
 			return m.startBrowserDownload()
 		}
 	}
 	return m, nil
-}
-
-func (m *Model) prepareTransfer(action string, sourcePath string, targetPath string, panel domain.FilePanel, run func(func(domain.TransferProgress)) error, success string, selectName string) (tea.Model, tea.Cmd) {
-	var (
-		exists bool
-		err    error
-	)
-	if panel == domain.RemotePanel {
-		if m.browser.session == nil {
-			err = fmt.Errorf("browser session is not ready")
-		} else {
-			exists, err = m.browser.session.PathExists(targetPath)
-		}
-	} else {
-		exists, err = m.services.Files.ExistsLocal(targetPath)
-	}
-	if err != nil {
-		if isBrowserSessionError(err) {
-			return m.handleBrowserSessionFailure(err)
-		}
-		m.setErrorStatus(err)
-		return m, nil
-	}
-	if exists {
-		m.openBrowserOverwriteConfirm(sourcePath, targetPath, &browserTransfer{
-			action:   action,
-			source:   sourcePath,
-			target:   targetPath,
-			run:      run,
-			success:  success,
-			panel:    panel,
-			selectBy: selectName,
-		})
-		return m, nil
-	}
-	progressCh := make(chan transferProgressMsg, 16)
-	return m, tea.Batch(
-		func() tea.Msg {
-			err := run(func(progress domain.TransferProgress) {
-				select {
-				case progressCh <- transferProgressMsg{progress: progress, action: action, source: progressCh}:
-				default:
-				}
-			})
-			close(progressCh)
-			if err != nil {
-				return opDoneMsg{err: err}
-			}
-			return opDoneMsg{status: success, success: true, reloadBrowser: true, targetPanel: panel, selectName: selectName}
-		},
-		listenTransferProgress(progressCh),
-	)
 }
 
 func (m *Model) viewBrowser() string {
@@ -215,15 +183,22 @@ func (m *Model) renderBrowserPanel(panel filePanel, width int, height int, focus
 	lines := []string{header}
 	headerLines := strings.Count(header, "\n") + 1
 	contentHeight := max(1, innerHeight-headerLines)
-	start := 0
-	if panel.cursor >= contentHeight {
-		start = panel.cursor - contentHeight + 1
+	rowAreaHeight := contentHeight
+	if panel.loading && rowAreaHeight > 0 {
+		rowAreaHeight--
 	}
-	end := start + contentHeight
+	start := 0
+	if rowAreaHeight > 0 && panel.cursor >= rowAreaHeight {
+		start = panel.cursor - rowAreaHeight + 1
+	}
+	end := start + rowAreaHeight
 	if end > len(rows) {
 		end = len(rows)
 	}
 	for index, row := range rows {
+		if rowAreaHeight == 0 {
+			break
+		}
 		if index < start || index >= end {
 			continue
 		}
@@ -261,7 +236,10 @@ func (m *Model) renderBrowserPanel(panel filePanel, width int, height int, focus
 		lines = append(lines, styles.SubtleText.Render(m.translator.T("browser.empty")))
 	}
 	if panel.loading {
-		lines = append(lines, styles.SubtleText.Render(m.translator.T("browser.loading")))
+		for len(lines) < headerLines+rowAreaHeight {
+			lines = append(lines, "")
+		}
+		lines = append(lines, lipgloss.NewStyle().Width(innerWidth).Align(lipgloss.Right).Render(styles.WarningText.Render(m.translator.T("browser.loading"))))
 	}
 	for len(lines) < innerHeight {
 		lines = append(lines, "")
@@ -287,9 +265,13 @@ func (m *Model) renderBrowserPanelHeader(panel filePanel, width int, focused boo
 	if meta != "" {
 		firstLine = lipgloss.JoinHorizontal(lipgloss.Left, title, " ", meta)
 	}
+	secondLine := ""
+	if selected, ok := panel.selected(); ok && selected.Name != ".." {
+		secondLine = m.styles.SubtleText.Render(truncate(renderBrowserEntryMeta(selected), width))
+	}
 	return strings.Join([]string{
 		lipgloss.NewStyle().Width(width).Render(firstLine),
-		"",
+		secondLine,
 	}, "\n")
 }
 
@@ -298,10 +280,7 @@ func (m *Model) renderBrowserFooter(width int) string {
 	innerWidth := max(12, width-styles.Panel.GetHorizontalFrameSize())
 	switch m.overlay {
 	case overlayBrowserInput:
-		title := m.translator.T("browser.path")
-		if m.browser.inputMode == browserInputFilter {
-			title = m.translator.T("browser.filter")
-		}
+		title := m.browserInputTitle()
 		return renderSizedBlock(styles.Panel, width, 0, strings.Join([]string{
 			styles.FieldLabel.Render(title),
 			m.browser.input.View(),
@@ -315,8 +294,11 @@ func (m *Model) renderBrowserFooter(width int) string {
 			localizedShortcutHelpWidth(m.translator, m.styles, max(24, innerWidth),
 				"enter/l", "shortcut.open",
 				"tab", "shortcut.switch",
+				"c-n", "shortcut.new_dir",
+				"c-r", "shortcut.rename",
+				"c-d", "shortcut.delete",
 				"c-u", "shortcut.upload",
-				"c-d", "shortcut.download",
+				"c-s", "shortcut.download",
 				"c-p", "shortcut.palette",
 				"q", "shortcut.back",
 			),
@@ -348,7 +330,7 @@ func (m *Model) viewBrowserHeader(width int) string {
 func (m *Model) browserOverlayView(contentWidth int, _ int) string {
 	switch m.overlay {
 	case overlayBrowserConfirm:
-		return m.viewBrowserOverwriteConfirm(contentWidth)
+		return m.viewBrowserConfirm(contentWidth)
 	case overlayCommandPalette:
 		return m.viewCommandPalette(contentWidth)
 	default:
@@ -356,7 +338,7 @@ func (m *Model) browserOverlayView(contentWidth int, _ int) string {
 	}
 }
 
-func (m *Model) viewBrowserOverwriteConfirm(contentWidth int) string {
+func (m *Model) viewBrowserConfirm(contentWidth int) string {
 	styles := m.styles
 	dialogWidth := min(72, max(46, contentWidth-6))
 	innerWidth := max(20, dialogWidth-styles.Dialog.GetHorizontalFrameSize())
@@ -370,8 +352,17 @@ func (m *Model) viewBrowserOverwriteConfirm(contentWidth int) string {
 	lines := []string{
 		styles.PageTitle.Render(m.confirm.title),
 		"",
-		styles.SubtleText.Render(truncate(m.confirmSourceText(innerWidth), innerWidth)),
-		styles.SubtleText.Render(truncate(m.confirmTargetText(innerWidth), innerWidth)),
+	}
+	if strings.TrimSpace(m.confirm.description) != "" {
+		lines = append(lines, styles.SubtleText.Render(truncate(m.confirm.description, innerWidth)), "")
+	}
+	if strings.TrimSpace(m.confirm.sourcePath) != "" {
+		lines = append(lines, styles.SubtleText.Render(truncate(m.confirmSourceText(innerWidth), innerWidth)))
+	}
+	if strings.TrimSpace(m.confirm.targetPath) != "" {
+		lines = append(lines, styles.SubtleText.Render(truncate(m.confirmTargetText(innerWidth), innerWidth)))
+	}
+	lines = append(lines,
 		"",
 		lipgloss.JoinHorizontal(lipgloss.Left, yesButton, "  ", noButton),
 		"",
@@ -380,7 +371,7 @@ func (m *Model) viewBrowserOverwriteConfirm(contentWidth int) string {
 			"enter/y", "shortcut.confirm",
 			"esc/n", "shortcut.cancel",
 		),
-	}
+	)
 	return styles.Dialog.Width(dialogWidth).Render(strings.Join(lines, "\n"))
 }
 
@@ -393,68 +384,6 @@ func (m *Model) clearActiveBrowserFilter() tea.Cmd {
 	panel.filter = ""
 	panel.cursor = clamp(panel.cursor, len(panel.rows()))
 	return nil
-}
-
-func (m *Model) loadLocalCmd(pathValue string, filter string) tea.Cmd {
-	m.browser.localPanel.loading = true
-	m.browser.localPanel.request++
-	request := m.browser.localPanel.request
-	m.setInfoStatus(m.translator.T("status.loading_browser"))
-	return func() tea.Msg {
-		items, currentPath, err := m.services.Files.ListLocal(pathValue, "")
-		return localLoadedMsg{items: items, path: currentPath, request: request, err: err}
-	}
-}
-
-func (m *Model) loadRemoteCmd(pathValue string, filter string) tea.Cmd {
-	m.browser.remotePanel.loading = true
-	m.browser.remotePanel.request++
-	request := m.browser.remotePanel.request
-	m.setInfoStatus(m.translator.T("status.loading_browser"))
-	return func() tea.Msg {
-		if m.browser.session == nil {
-			return remoteLoadedMsg{request: request, err: fmt.Errorf("browser session is not ready")}
-		}
-		items, currentPath, err := m.browser.session.ListRemote(pathValue)
-		return remoteLoadedMsg{items: items, path: currentPath, request: request, err: err}
-	}
-}
-
-func (m *Model) reloadBrowserCmd() tea.Cmd {
-	return tea.Batch(
-		m.loadLocalCmd(m.browser.localPanel.path, m.browser.localPanel.filter),
-		m.loadRemoteCmd(m.browser.remotePanel.path, m.browser.remotePanel.filter),
-	)
-}
-
-func (m *Model) reloadBrowserSelectCmd(targetPanel domain.FilePanel, selectName string) tea.Cmd {
-	m.browser.localPanel.loading = true
-	m.browser.localPanel.request++
-	localRequest := m.browser.localPanel.request
-	m.browser.remotePanel.loading = true
-	m.browser.remotePanel.request++
-	remoteRequest := m.browser.remotePanel.request
-	return tea.Batch(
-		func() tea.Msg {
-			items, currentPath, err := m.services.Files.ListLocal(m.browser.localPanel.path, m.browser.localPanel.filter)
-			msg := localLoadedMsg{items: items, path: currentPath, request: localRequest, err: err}
-			if targetPanel == domain.LocalPanel {
-				msg.selectName = selectName
-			}
-			return msg
-		},
-		func() tea.Msg {
-			if m.browser.session == nil {
-				return remoteLoadedMsg{request: remoteRequest, err: fmt.Errorf("browser session is not ready")}
-			}
-			items, currentPath, err := m.browser.session.ListRemote(m.browser.remotePanel.path)
-			msg := remoteLoadedMsg{items: items, path: currentPath, request: remoteRequest, err: err}
-			if targetPanel == domain.RemotePanel {
-				msg.selectName = selectName
-			}
-			return msg
-		},
-	)
 }
 
 func (m *Model) activeBrowserPanel() *filePanel {
@@ -477,6 +406,19 @@ func newBrowserState(translator *i18n.Translator, styles themes.Styles) browserS
 		},
 		activePanel: domain.LocalPanel,
 		input:       input,
+	}
+}
+
+func (m *Model) browserInputTitle() string {
+	switch m.browser.inputMode {
+	case browserInputFilter:
+		return m.translator.T("browser.filter")
+	case browserInputMkdir:
+		return m.translator.T("browser.mkdir")
+	case browserInputRename:
+		return m.translator.T("browser.rename")
+	default:
+		return m.translator.T("browser.path")
 	}
 }
 

@@ -1,6 +1,9 @@
 package domain
 
-import "time"
+import (
+	"os"
+	"time"
+)
 
 type FilePanel int
 
@@ -9,11 +12,21 @@ const (
 	RemotePanel
 )
 
+func (p FilePanel) String() string {
+	switch p {
+	case RemotePanel:
+		return "remote"
+	default:
+		return "local"
+	}
+}
+
 type FileEntry struct {
 	Name    string
 	Path    string
 	Size    int64
 	ModTime time.Time
+	Mode    os.FileMode
 	IsDir   bool
 	Panel   FilePanel
 }

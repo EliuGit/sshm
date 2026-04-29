@@ -24,6 +24,7 @@ func newImportState(translator *i18n.Translator, styles themes.Styles) importSta
 }
 
 func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
+	workflow := m.importWorkflow()
 	if keyMsg, ok := msg.(tea.KeyMsg); ok {
 		switch m.imports.step {
 		case importStepPath:
@@ -35,7 +36,7 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter", "ctrl+s":
 				m.imports.loading = true
 				m.imports.errorText = ""
-				return m, m.previewImportCmd(m.imports.path.Value())
+				return m, workflow.previewCmd(m.imports.path.Value())
 			}
 			var cmd tea.Cmd
 			if m.imports.errorText != "" {
@@ -67,7 +68,7 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			case "ctrl+s", "enter":
 				m.imports.errorText = ""
-				return m, m.applyImportCmd()
+				return m, workflow.applyCmd()
 			}
 		}
 	}
@@ -199,64 +200,4 @@ func (m *Model) cycleImportAction() {
 	} else {
 		item.Action = domain.ImportActionCreate
 	}
-}
-
-func (m *Model) previewImportCmd(path string) tea.Cmd {
-	return func() tea.Msg {
-		preview, err := m.services.Imports.PreviewSSHConfig(path)
-		return importPreviewMsg{preview: preview, err: err}
-	}
-}
-
-func (m *Model) applyImportCmd() tea.Cmd {
-	preview := domain.ImportPreview{Candidates: append([]domain.ImportCandidate{}, m.imports.items...), Warnings: append([]string{}, m.imports.warnings...)}
-	return func() tea.Msg {
-		summary, err := m.services.Imports.Apply(preview)
-		msg := importDoneMsg{summary: summary, err: err, reloadConnections: true}
-		if err != nil {
-			return msg
-		}
-		msg.setScope = true
-		msg.scope = domain.ConnectionListScopeAll
-		groupName, ok := singleImportedGroup(preview.Candidates)
-		if ok {
-			if groupName == "" {
-				msg.scope = domain.ConnectionListScopeUngrouped
-				msg.groupName = m.translator.T("group.ungrouped")
-			} else {
-				groups, err := m.services.Groups.List()
-				if err == nil {
-					for _, group := range groups {
-						if !group.Ungrouped && group.Name == groupName {
-							msg.scope = domain.ConnectionListScopeGroup
-							msg.groupID = group.ID
-							msg.groupName = group.Name
-							break
-						}
-					}
-				}
-			}
-		}
-		return msg
-	}
-}
-
-func singleImportedGroup(items []domain.ImportCandidate) (string, bool) {
-	groupName := ""
-	seen := false
-	for _, item := range items {
-		if item.Skipped || item.Action == domain.ImportActionSkip {
-			continue
-		}
-		name := strings.TrimSpace(item.GroupName)
-		if !seen {
-			groupName = name
-			seen = true
-			continue
-		}
-		if groupName != name {
-			return "", false
-		}
-	}
-	return groupName, seen
 }

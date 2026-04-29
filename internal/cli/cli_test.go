@@ -24,14 +24,21 @@ type fakeRemote struct {
 	downloadCall []string
 }
 
-type fakeSession struct{}
+type fakeSession struct {
+	remote   *fakeRemote
+	connName string
+}
 
 func (f *fakeRemote) ProbeShell(conn domain.Connection, password string) error {
 	return nil
 }
 
-func (f *fakeRemote) OpenSession(conn domain.Connection, password string) (app.RemoteSession, error) {
+func (f *fakeRemote) OpenSession(conn domain.Connection, password string) (app.ShellSession, error) {
 	return &fakeSession{}, nil
+}
+
+func (f *fakeRemote) OpenFileSession(conn domain.Connection, password string) (app.FileSession, error) {
+	return &fakeSession{remote: f, connName: conn.Name}, nil
 }
 
 func (f *fakeRemote) OpenShell(conn domain.Connection, password string) error {
@@ -49,41 +56,27 @@ func (f *fakeRemote) RunCommand(conn domain.Connection, password string, command
 	return nil
 }
 
-func (f *fakeRemote) ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error) {
-	return nil, "", nil
-}
-
-func (f *fakeRemote) PathExists(conn domain.Connection, password string, targetPath string) (bool, error) {
-	return f.remoteExists[conn.Name+"\x00"+targetPath], nil
-}
-
-func (f *fakeRemote) Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
-	f.uploadCalls = append(f.uploadCalls, conn.Name+":"+localPath+"->"+remoteDir)
-	return nil
-}
-
-func (f *fakeRemote) Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
-	f.downloadCall = append(f.downloadCall, conn.Name+":"+remotePath+"->"+localDir)
-	return nil
-}
-
-func (f *fakeRemote) HomeDir(conn domain.Connection, password string) (string, error) {
-	return "/", nil
-}
-
 func (*fakeSession) OpenShell() error { return nil }
 func (*fakeSession) ListRemote(targetPath string) ([]domain.FileEntry, string, error) {
 	return nil, "", nil
 }
-func (*fakeSession) PathExists(targetPath string) (bool, error) { return false, nil }
-func (*fakeSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+func (s *fakeSession) PathExists(targetPath string) (bool, error) {
+	return s.remote.remoteExists[s.connName+"\x00"+targetPath], nil
+}
+func (*fakeSession) Mkdir(targetPath string) error  { return nil }
+func (*fakeSession) Remove(targetPath string) error { return nil }
+func (*fakeSession) Rename(sourcePath string, targetPath string) error {
 	return nil
 }
-func (*fakeSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+func (s *fakeSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
+	s.remote.uploadCalls = append(s.remote.uploadCalls, s.connName+":"+localPath+"->"+remoteDir)
 	return nil
 }
-func (*fakeSession) HomeDir() (string, error) { return "/", nil }
-func (*fakeSession) Close() error             { return nil }
+func (s *fakeSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
+	s.remote.downloadCall = append(s.remote.downloadCall, s.connName+":"+remotePath+"->"+localDir)
+	return nil
+}
+func (*fakeSession) Close() error { return nil }
 
 func TestParseRejectsConnectionNameShortcut(t *testing.T) {
 	t.Parallel()

@@ -28,17 +28,27 @@ func (*stubRemoteSession) ListRemote(targetPath string) ([]domain.FileEntry, str
 	return nil, "", nil
 }
 func (*stubRemoteSession) PathExists(targetPath string) (bool, error) { return false, nil }
+func (*stubRemoteSession) Mkdir(targetPath string) error              { return nil }
+func (*stubRemoteSession) Remove(targetPath string) error             { return nil }
+func (*stubRemoteSession) Rename(sourcePath string, targetPath string) error {
+	return nil
+}
 func (*stubRemoteSession) Upload(localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
 	return nil
 }
 func (*stubRemoteSession) Download(remotePath string, localDir string, progress func(domain.TransferProgress)) error {
 	return nil
 }
-func (*stubRemoteSession) HomeDir() (string, error) { return "/", nil }
-func (*stubRemoteSession) Close() error             { return nil }
+func (*stubRemoteSession) Close() error { return nil }
 
 func (r probeOnlyRemote) ProbeShell(conn domain.Connection, password string) error { return r.probeErr }
-func (r probeOnlyRemote) OpenSession(conn domain.Connection, password string) (app.RemoteSession, error) {
+func (r probeOnlyRemote) OpenSession(conn domain.Connection, password string) (app.ShellSession, error) {
+	if r.probeErr != nil {
+		return nil, r.probeErr
+	}
+	return &stubRemoteSession{}, nil
+}
+func (r probeOnlyRemote) OpenFileSession(conn domain.Connection, password string) (app.FileSession, error) {
 	if r.probeErr != nil {
 		return nil, r.probeErr
 	}
@@ -47,21 +57,6 @@ func (r probeOnlyRemote) OpenSession(conn domain.Connection, password string) (a
 func (probeOnlyRemote) OpenShell(conn domain.Connection, password string) error { return nil }
 func (probeOnlyRemote) RunCommand(conn domain.Connection, password string, command string, stdout io.Writer, stderr io.Writer) error {
 	return nil
-}
-func (probeOnlyRemote) ListRemote(conn domain.Connection, password string, targetPath string) ([]domain.FileEntry, string, error) {
-	return nil, "", nil
-}
-func (probeOnlyRemote) PathExists(conn domain.Connection, password string, targetPath string) (bool, error) {
-	return false, nil
-}
-func (probeOnlyRemote) Upload(conn domain.Connection, password string, localPath string, remoteDir string, progress func(domain.TransferProgress)) error {
-	return nil
-}
-func (probeOnlyRemote) Download(conn domain.Connection, password string, remotePath string, localDir string, progress func(domain.TransferProgress)) error {
-	return nil
-}
-func (probeOnlyRemote) HomeDir(conn domain.Connection, password string) (string, error) {
-	return "/", nil
 }
 
 func newModelWithProbeServices(t *testing.T, probeErr error) *Model {
@@ -692,7 +687,7 @@ func TestHomeEnterStartsShellProbe(t *testing.T) {
 	if !ok {
 		t.Fatalf("cmd() msg = %T, want homeProbeDoneMsg", msg)
 	}
-	if probeDone.action != homeProbeShell || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.session == nil {
+	if probeDone.action != homeProbeShell || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.shellSession == nil {
 		t.Fatalf("probeDone = %#v", probeDone)
 	}
 }
@@ -793,7 +788,7 @@ func TestHomeCtrlOStartsBrowserProbe(t *testing.T) {
 	if !ok {
 		t.Fatalf("cmd() msg = %T, want homeProbeDoneMsg", msg)
 	}
-	if probeDone.action != homeProbeBrowser || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.session == nil {
+	if probeDone.action != homeProbeBrowser || probeDone.connectionName != "prod" || probeDone.err != nil || probeDone.fileSession == nil {
 		t.Fatalf("probeDone = %#v", probeDone)
 	}
 }
