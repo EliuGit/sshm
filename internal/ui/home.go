@@ -404,12 +404,14 @@ func (m *Model) renderConnectionRow(conn Connection, selected bool, width int) s
 	styles := m.styles
 	rowStyle := styles.Text.Copy().Padding(0, 1)
 	nameStyle := styles.ListItemTitle
+	metaStyle := styles.ListItemMeta
 	if selected {
 		rowStyle = styles.Selection.Copy().Padding(0, 1)
 		nameStyle = m.styles.SelectionTitle
+		metaStyle = m.styles.HelpText
 	}
 	nameLine := nameStyle.Render(truncate(conn.Name, max(8, width-2)))
-	metaLine := styles.ListItemMeta.Render(truncate(m.connectionListMeta(conn), max(8, width-2)))
+	metaLine := metaStyle.Render(truncate(m.connectionListMeta(conn), max(8, width-2)))
 	content := strings.Join([]string{nameLine, metaLine}, "\n")
 	if selected {
 		return renderSizedBlock(rowStyle, width, 0, content)
