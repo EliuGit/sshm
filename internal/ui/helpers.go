@@ -189,7 +189,12 @@ func overlayCenter(base string, overlay string, width int, height int) string {
 func renderSizedBlock(style lipgloss.Style, outerWidth int, outerHeight int, content string) string {
 	block := style
 	if outerWidth > 0 {
-		// lipgloss 的 Width/Height 已包含 padding，仅需扣除 border 才能得到目标外宽/外高。
+		// 基于 lipgloss v1.1.0 的官方实现和 README 说明，后续如果再调整布局要注意：
+		// 1. Style.Width/Height 影响的是“内容区 + padding”这一层，border 会在最终渲染阶段额外叠加。
+		// 2. get.go 里的 GetHorizontalFrameSize/GetVerticalFrameSize 返回的是 margin + padding + border 总和，
+		//    不能把它误当成“只包含 border”的尺寸。
+		// 3. 这里传入的是目标外宽/外高，因此换算成 Width/Height 时只扣 border，不能扣完整 frame size，
+		//    否则块级区域会被缩小，后续很容易把背景错判成渲染穿透问题。
 		innerWidth := max(1, outerWidth-style.GetHorizontalBorderSize())
 		block = block.Width(innerWidth)
 	}

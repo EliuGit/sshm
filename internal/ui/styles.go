@@ -124,6 +124,11 @@ func newDefaultTheme() Theme {
 }
 
 func newTheme(palette ThemePalette) Theme {
+	// 基于 lipgloss README 的 Inheritance 说明，后续如果要重新引入多层背景，需要记住：
+	// 1. Inherit 只会继承接收方“尚未设置”的规则，不会覆盖已设置的 foreground/background。
+	// 2. 父容器先 Render 出来的背景，不会自动“流入”子组件后续单独 Render 的内容。
+	// 3. 如果未来要做真正稳定的多层背景，应先定义共享背景的 base style，再从 base 派生标题、正文、
+	//    弱文本、输入框等样式；不要假设在页面上临时补一个 Background 就能让所有嵌套区域自然一致。
 	text := lipgloss.NewStyle().
 		Foreground(palette.Text)
 
