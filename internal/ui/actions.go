@@ -172,7 +172,7 @@ func (m *Model) openCurrentConnectionBrowser() (tea.Model, tea.Cmd) {
 func (m *Model) openHomeCreateForm() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
 	m.page = pageForm
-	m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.theme)
+	m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.styles)
 	return m, tea.ClearScreen
 }
 
@@ -183,7 +183,7 @@ func (m *Model) openCurrentConnectionEdit() (tea.Model, tea.Cmd) {
 	}
 	m.clearStaleErrorStatus()
 	m.page = pageForm
-	m.form = newFormState(conn, m.translator, m.defaultPrivateKeyPath, m.theme)
+	m.form = newFormState(conn, m.translator, m.defaultPrivateKeyPath, m.styles)
 	return m, tea.ClearScreen
 }
 
@@ -199,7 +199,7 @@ func (m *Model) confirmCurrentConnectionDelete() (tea.Model, tea.Cmd) {
 
 func (m *Model) openHomeGroupFilter() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
-	m.groups = newGroupPanelState(m.translator, m.theme)
+	m.groups = newGroupPanelState(m.translator, m.styles)
 	m.groups.mode = groupPanelFilter
 	m.overlay = overlayGroup
 	return m, m.loadGroupsCmd()
@@ -211,7 +211,7 @@ func (m *Model) openHomeMoveGroup() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clearStaleErrorStatus()
-	m.groups = newGroupPanelState(m.translator, m.theme)
+	m.groups = newGroupPanelState(m.translator, m.styles)
 	m.groups.mode = groupPanelMove
 	m.groups.targetID = conn.ID
 	m.overlay = overlayGroup
@@ -221,7 +221,7 @@ func (m *Model) openHomeMoveGroup() (tea.Model, tea.Cmd) {
 func (m *Model) openImportPage() (tea.Model, tea.Cmd) {
 	m.clearStaleErrorStatus()
 	m.page = pageImport
-	m.imports = newImportState(m.translator, m.theme)
+	m.imports = newImportState(m.translator, m.styles)
 	return m, tea.ClearScreen
 }
 

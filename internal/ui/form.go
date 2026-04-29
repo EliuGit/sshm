@@ -3,6 +3,7 @@ package ui
 import (
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strconv"
 	"strings"
 
@@ -16,7 +17,7 @@ func (m *Model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch keyMsg.String() {
 		case "esc":
 			m.page = pageHome
-			m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.theme)
+			m.form = newFormState(nil, m.translator, m.defaultPrivateKeyPath, m.styles)
 			m.setInfoStatus(m.translator.T("status.cancelled"))
 			return m, tea.ClearScreen
 		case "tab", "down":
@@ -130,7 +131,7 @@ func (m *Model) submitForm() (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewForm() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	contentWidth := 76
 	if m.width > 0 {
 		contentWidth = min(84, max(64, m.width-10))
@@ -173,7 +174,7 @@ func (m *Model) viewForm() string {
 	}
 	lines = append(lines,
 		"",
-		localizedShortcutHelpWidth(m.translator, m.theme, max(24, contentWidth-4),
+		localizedShortcutHelpWidth(m.translator, m.styles, max(24, contentWidth-4),
 			"tab/s-tab", "form.shortcut_move",
 			"enter", "form.shortcut_next_save",
 			"c-s", "form.shortcut_save",
@@ -185,7 +186,7 @@ func (m *Model) viewForm() string {
 }
 
 func (m *Model) renderInlineField(index int, label string) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	labelStyle := styles.FieldLabel
 	contentStyle := styles.Input
 	promptStyle := styles.SubtleText
@@ -229,7 +230,7 @@ func (m *Model) renderInlineField(index int, label string) string {
 }
 
 func (m *Model) renderAuthField() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	password := "( ) " + m.translator.T("form.password")
 	key := "( ) " + m.translator.T("form.private_key")
 	if m.form.authType == domain.AuthTypePassword {
@@ -257,7 +258,7 @@ func (m *Model) renderAuthField() string {
 }
 
 func (m *Model) renderButtons() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	save := "[ " + m.translator.T("form.save") + " ]"
 	cancel := "[ " + m.translator.T("form.cancel") + " ]"
 	if m.form.focusIndex == 7 {
@@ -273,20 +274,20 @@ func (m *Model) formLabelWidth() int {
 	return 12
 }
 
-func newFormState(conn *domain.Connection, translator *i18n.Translator, defaultPrivateKeyPath string, theme Theme) formState {
+func newFormState(conn *domain.Connection, translator *i18n.Translator, defaultPrivateKeyPath string, styles themes.Styles) formState {
 	state := formState{
 		authType:         domain.AuthTypePassword,
 		originalAuthType: domain.AuthTypePassword,
 	}
-	state.name = newInput(theme, translator.T("form.name"), 40)
-	state.host = newInput(theme, translator.T("form.host"), 40)
-	state.port = newInput(theme, translator.T("form.port"), 8)
-	state.username = newInput(theme, translator.T("form.username"), 24)
-	state.description = newInput(theme, translator.T("form.description"), 48)
-	state.password = newInput(theme, translator.T("form.password"), 32)
+	state.name = newInput(styles, translator.T("form.name"), 40)
+	state.host = newInput(styles, translator.T("form.host"), 40)
+	state.port = newInput(styles, translator.T("form.port"), 8)
+	state.username = newInput(styles, translator.T("form.username"), 24)
+	state.description = newInput(styles, translator.T("form.description"), 48)
+	state.password = newInput(styles, translator.T("form.password"), 32)
 	state.password.EchoMode = textinput.EchoPassword
 	state.password.EchoCharacter = '•'
-	state.privateKeyPath = newInput(theme, translator.T("form.key_path"), 48)
+	state.privateKeyPath = newInput(styles, translator.T("form.key_path"), 48)
 	state.port.SetValue("22")
 	state.privateKeyPath.SetValue(defaultPrivateKeyPath)
 

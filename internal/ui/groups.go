@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -11,12 +12,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func newGroupPanelState(translator *i18n.Translator, theme Theme) groupPanelState {
+func newGroupPanelState(translator *i18n.Translator, styles themes.Styles) groupPanelState {
 	input := textinput.New()
 	input.Placeholder = translator.T("group.name")
 	input.Prompt = translator.T("group.input_prompt")
-	input.PromptStyle = theme.Styles.SubtleText
-	input.PlaceholderStyle = theme.Styles.MutedText
+	input.PromptStyle = styles.SubtleText
+	input.PlaceholderStyle = styles.MutedText
 	input.Width = 28
 	input.Blur()
 	return groupPanelState{input: input}
@@ -150,7 +151,7 @@ func (m *Model) updateGroupPanel(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewGroupPanel() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	const tableWidth = 36
 	title := m.translator.T("group.filter_title")
 	desc := m.translator.T("group.filter_desc")
@@ -189,7 +190,7 @@ func (m *Model) viewGroupPanel() string {
 			styles.PageTitle.Render(m.confirm.title),
 			styles.SubtleText.Render(m.confirm.description),
 			"",
-			localizedShortcutHelpWidth(m.translator, m.theme, tableWidth,
+			localizedShortcutHelpWidth(m.translator, m.styles, tableWidth,
 				"enter/y", "group.shortcut_confirm",
 				"esc/n", "group.shortcut_cancel",
 				"q", "group.shortcut_close",
@@ -200,7 +201,7 @@ func (m *Model) viewGroupPanel() string {
 	if m.groups.errorValue != "" {
 		lines = append(lines, "", styles.ErrorText.Render(m.groups.errorValue))
 	}
-	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.theme, tableWidth,
+	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.styles, tableWidth,
 		"enter", "group.shortcut_choose",
 		"a", "group.shortcut_create",
 		"r", "group.shortcut_rename",

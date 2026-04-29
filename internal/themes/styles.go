@@ -1,16 +1,23 @@
-package ui
+package themes
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"fmt"
+	"sort"
+	"strings"
 
-type Theme struct {
-	Palette ThemePalette
-	Styles  ThemeStyles
-}
+	"github.com/charmbracelet/lipgloss"
+)
 
-type ThemePalette struct {
-	Background                  lipgloss.Color
-	Surface                     lipgloss.Color
-	SurfaceSoft                 lipgloss.Color
+const (
+	DefaultName = "dark"
+	LightName   = "light"
+	DraculaName = "dracula"
+	NordName    = "nord"
+)
+
+// Palette 只保留当前样式体系真实消费的颜色。
+// 不要为了“以后可能会用”预留大块背景/面板底色字段，否则后续排查时容易误判为还有全局铺底方案可走。
+type Palette struct {
 	PanelBorder                 lipgloss.Color
 	PanelBorderFocused          lipgloss.Color
 	DialogBorder                lipgloss.Color
@@ -34,16 +41,15 @@ type ThemePalette struct {
 	SearchHighlight             lipgloss.Color
 	KeyText                     lipgloss.Color
 	KeyBackground               lipgloss.Color
-	StatusInfoBackground        lipgloss.Color
-	StatusSuccessBackground     lipgloss.Color
-	StatusErrorBackground       lipgloss.Color
 	StatusText                  lipgloss.Color
 	BadgeText                   lipgloss.Color
 	BadgeBackground             lipgloss.Color
 	BadgeMutedBackground        lipgloss.Color
 }
 
-type ThemeStyles struct {
+// Styles 是 UI 唯一需要消费的最终样式集合。
+// 主题名与原始调色板只在本包内部用于构建，不再泄漏到 ui 包。
+type Styles struct {
 	App                lipgloss.Style
 	Banner             lipgloss.Style
 	Panel              lipgloss.Style
@@ -63,6 +69,7 @@ type ThemeStyles struct {
 	Selection          lipgloss.Style
 	SelectionInactive  lipgloss.Style
 	SelectionDetail    lipgloss.Style
+	SelectionTitle     lipgloss.Style
 	ListItemTitle      lipgloss.Style
 	ListItemMeta       lipgloss.Style
 	FieldLabel         lipgloss.Style
@@ -84,46 +91,61 @@ type ThemeStyles struct {
 	BadgeAccent        lipgloss.Style
 }
 
-func newDefaultTheme() Theme {
-	palette := ThemePalette{
-		Background:                  lipgloss.Color("233"),
-		Surface:                     lipgloss.Color("235"),
-		SurfaceSoft:                 lipgloss.Color("237"),
-		PanelBorder:                 lipgloss.Color("239"),
-		PanelBorderFocused:          lipgloss.Color("44"),
-		DialogBorder:                lipgloss.Color("180"),
-		Title:                       lipgloss.Color("229"),
-		SectionTitle:                lipgloss.Color("151"),
-		Text:                        lipgloss.Color("254"),
-		SubtleText:                  lipgloss.Color("252"),
-		MutedText:                   lipgloss.Color("244"),
-		HelpText:                    lipgloss.Color("246"),
-		ShortcutLabel:               lipgloss.Color("251"),
-		Error:                       lipgloss.Color("210"),
-		Success:                     lipgloss.Color("157"),
-		Warning:                     lipgloss.Color("222"),
-		SelectionText:               lipgloss.Color("232"),
-		SelectionBackground:         lipgloss.Color("115"),
-		SelectionInactiveText:       lipgloss.Color("254"),
-		SelectionInactiveBackground: lipgloss.Color("238"),
-		FieldLabel:                  lipgloss.Color("223"),
-		FieldLabelFocused:           lipgloss.Color("195"),
-		GroupScope:                  lipgloss.Color("186"),
-		SearchHighlight:             lipgloss.Color("222"),
-		KeyText:                     lipgloss.Color("230"),
-		KeyBackground:               lipgloss.Color("59"),
-		StatusInfoBackground:        lipgloss.Color("238"),
-		StatusSuccessBackground:     lipgloss.Color("29"),
-		StatusErrorBackground:       lipgloss.Color("88"),
-		StatusText:                  lipgloss.Color("255"),
-		BadgeText:                   lipgloss.Color("230"),
-		BadgeBackground:             lipgloss.Color("66"),
-		BadgeMutedBackground:        lipgloss.Color("239"),
+var registeredPalettes = map[string]Palette{}
+
+// Register 在包初始化阶段注册主题调色板。
+// 后续新增主题时只需新增一个 theme_xxx.go 文件并在 init 中调用这里。
+func Register(name string, palette Palette) {
+	normalized := normalizeName(name)
+	if normalized == "" {
+		panic("themes: 主题名不能为空")
 	}
-	return newTheme(palette)
+	if _, exists := registeredPalettes[normalized]; exists {
+		panic(fmt.Sprintf("themes: 重复注册主题 %q", normalized))
+	}
+	registeredPalettes[normalized] = palette
 }
 
-func newTheme(palette ThemePalette) Theme {
+func SupportedNames() []string {
+	names := make([]string, 0, len(registeredPalettes))
+	for name := range registeredPalettes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
+func ResolveStyles(name string) (Styles, error) {
+	normalized := normalizeName(name)
+	if normalized == "" {
+		normalized = DefaultName
+	}
+
+	palette, ok := registeredPalettes[normalized]
+	if !ok {
+		return Styles{}, fmt.Errorf("unsupported theme %q, supported themes: %s", name, strings.Join(SupportedNames(), ", "))
+	}
+	return buildStyles(palette), nil
+}
+
+func MustStyles(name string) Styles {
+	styles, err := ResolveStyles(name)
+	if err != nil {
+		panic(err)
+	}
+	return styles
+}
+
+func normalizeName(name string) string {
+	return strings.ToLower(strings.TrimSpace(name))
+}
+
+func buildStyles(palette Palette) Styles {
+	// 当前结论：
+	// 1. 这个 UI 仍以“局部高亮背景 + 大部分容器透明”为准，不再尝试页面根层/全局 surface 铺底。
+	// 2. lipgloss 在这里是 ANSI 字符串拼装，不是可层叠画布；父级背景不会稳定托住子组件后续单独 Render 的内容。
+	// 3. 如果未来确实要引入实体背景，必须按容器级方案整体设计并逐层落地，不要恢复“先预留背景字段再局部试验”的状态。
+	//
 	// 基于 lipgloss README 的 Inheritance 说明，后续如果要重新引入多层背景，需要记住：
 	// 1. Inherit 只会继承接收方“尚未设置”的规则，不会覆盖已设置的 foreground/background。
 	// 2. 父容器先 Render 出来的背景，不会自动“流入”子组件后续单独 Render 的内容。
@@ -142,7 +164,7 @@ func newTheme(palette ThemePalette) Theme {
 		Foreground(palette.SelectionText).
 		Background(palette.SelectionBackground)
 
-	styles := ThemeStyles{
+	return Styles{
 		App: lipgloss.NewStyle().
 			Padding(0, 1).
 			Foreground(palette.Text),
@@ -192,6 +214,7 @@ func newTheme(palette ThemePalette) Theme {
 		Selection:          selection,
 		SelectionInactive:  lipgloss.NewStyle().Foreground(palette.SelectionInactiveText).Background(palette.SelectionInactiveBackground),
 		SelectionDetail:    selection.Copy().Foreground(palette.Text),
+		SelectionTitle:     lipgloss.NewStyle().Bold(true).Foreground(palette.SelectionText),
 		ListItemTitle:      text.Copy().Bold(true),
 		ListItemMeta:       muted,
 		FieldLabel:         lipgloss.NewStyle().Foreground(palette.FieldLabel),
@@ -225,6 +248,7 @@ func newTheme(palette ThemePalette) Theme {
 
 		PanelTitle:        subtle,
 		PanelTitleFocused: lipgloss.NewStyle().Bold(true).Foreground(palette.Title),
+		// 状态栏当前只使用文字和已有 Badge/Keycap 背景，不单独引入整条背景，保持与现有页面背景方案一致。
 		StatusBar: lipgloss.NewStyle().
 			Foreground(palette.StatusText).
 			Padding(0, 1),
@@ -249,10 +273,5 @@ func newTheme(palette ThemePalette) Theme {
 			Foreground(palette.SelectionText).
 			Background(palette.SelectionBackground).
 			Padding(0, 1),
-	}
-
-	return Theme{
-		Palette: palette,
-		Styles:  styles,
 	}
 }

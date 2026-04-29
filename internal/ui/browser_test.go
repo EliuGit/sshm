@@ -424,7 +424,7 @@ func TestBrowserFooterMatchesActiveShortcuts(t *testing.T) {
 
 	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
 	model.page = pageBrowser
-	model.browser = newBrowserState(translator, model.theme)
+	model.browser = newBrowserState(translator, model.styles)
 	model.browser.activePanel = domain.LocalPanel
 	model.browser.localPanel.path = `C:\work\project`
 
@@ -535,7 +535,7 @@ func TestBrowserPaletteOpensAndCanSwitchPanel(t *testing.T) {
 
 	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
 	model.page = pageBrowser
-	model.browser = newBrowserState(translator, model.theme)
+	model.browser = newBrowserState(translator, model.styles)
 	model.browser.activePanel = domain.LocalPanel
 
 	updated, _ := model.updateBrowser(tea.KeyMsg{Type: tea.KeyCtrlP})
@@ -573,7 +573,7 @@ func TestBrowserFurtherActionClearsStaleErrorStatus(t *testing.T) {
 
 	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
 	model.page = pageBrowser
-	model.browser = newBrowserState(translator, model.theme)
+	model.browser = newBrowserState(translator, model.styles)
 	model.browser.activePanel = domain.LocalPanel
 	model.browser.localPanel.path = `C:\work\project`
 	model.browser.localPanel.items = []domain.FileEntry{
@@ -606,7 +606,7 @@ func TestBrowserPlainUploadDownloadKeysDoNotTriggerTransfer(t *testing.T) {
 
 	model := NewModel(nil, translator, `C:\work\project`, "~/.ssh/id_ed25519")
 	model.page = pageBrowser
-	model.browser = newBrowserState(translator, model.theme)
+	model.browser = newBrowserState(translator, model.styles)
 	model.browser.activePanel = domain.LocalPanel
 	model.browser.localPanel.path = `C:\work\project`
 	model.browser.remotePanel.path = "/tmp"

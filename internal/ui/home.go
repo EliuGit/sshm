@@ -122,7 +122,7 @@ func (m *Model) viewHome() string {
 		m.viewHomeBody(listWidth, detailWidth, bodyHeight),
 	}, "\n")
 	return m.renderShell(shellView{
-		style:   m.theme.Styles.App,
+		style:   m.styles.App,
 		width:   contentWidth,
 		height:  contentHeight,
 		header:  header,
@@ -134,7 +134,7 @@ func (m *Model) viewHome() string {
 }
 
 func (m *Model) viewHomeBody(listWidth int, detailWidth int, height int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	leftInnerWidth := max(12, listWidth-styles.FocusedPanel.GetHorizontalFrameSize())
 	leftInnerHeight := max(1, height-styles.FocusedPanel.GetVerticalFrameSize())
 	rightInnerWidth := max(12, detailWidth-styles.Panel.GetHorizontalFrameSize())
@@ -146,7 +146,7 @@ func (m *Model) viewHomeBody(listWidth int, detailWidth int, height int) string 
 }
 
 func (m *Model) viewConnectionList(width int, height int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	title := m.viewConnectionListTitle()
 	if len(m.home.connections) == 0 {
 		empty := []string{
@@ -187,7 +187,7 @@ func (m *Model) viewConnectionList(width int, height int) string {
 }
 
 func (m *Model) viewHomeHeader() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	info := buildinfo.Info()
 	width := m.width
 	if width == 0 {
@@ -221,7 +221,7 @@ func (m *Model) viewHomeHeader() string {
 }
 
 func (m *Model) viewHomeSearch(width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	style := styles.SearchBox
 	if m.home.searchMode {
 		style = styles.SearchBoxFocused
@@ -236,13 +236,13 @@ func (m *Model) viewHomeSearch(width int) string {
 
 func (m *Model) homeSearchValueStyle() lipgloss.Style {
 	if !m.home.searchMode && strings.TrimSpace(m.home.searchInput.Value()) != "" {
-		return m.theme.Styles.SearchValueBlurred
+		return m.styles.SearchValueBlurred
 	}
 	return lipgloss.NewStyle()
 }
 
 func (m *Model) viewHomeHelp() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	lines := []string{
 		styles.PageTitle.Render(m.translator.T("home.help_title")),
 		"",
@@ -255,13 +255,13 @@ func (m *Model) viewHomeHelp() string {
 }
 
 func (m *Model) viewHomeFooter(width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	items := make([]string, 0, len(homeFooterShortcuts())*2)
 	for _, shortcut := range homeFooterShortcuts() {
 		items = append(items, shortcut.key, shortcut.footerKey)
 	}
 	innerWidth := max(24, width-styles.Panel.GetHorizontalFrameSize())
-	content := localizedShortcutHelpWidth(m.translator, m.theme, innerWidth, items...)
+	content := localizedShortcutHelpWidth(m.translator, m.styles, innerWidth, items...)
 	return renderSizedBlock(styles.Panel, max(26, width), 0, content)
 }
 
@@ -310,7 +310,7 @@ func (m *Model) renderStatusBar(width int) string {
 }
 
 func (m *Model) renderStatusLine(width int) (lipgloss.Style, string) {
-	styles := m.theme.Styles
+	styles := m.styles
 	label := styles.BadgeMuted.Render("INFO")
 	bar := styles.StatusBar
 	textWidth := max(12, width-bar.GetHorizontalFrameSize()-lipgloss.Width(label)-1)
@@ -388,19 +388,17 @@ func (m *Model) probeConnectionCmd(conn Connection, action homeProbeAction) tea.
 }
 
 func (m *Model) actionRow(key string, labelKey string) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	return styles.Keycap.Render(key) + " " + styles.SubtleText.Render(m.translator.T(labelKey))
 }
 
 func (m *Model) renderConnectionRow(conn Connection, selected bool, width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	rowStyle := styles.Text.Copy().Padding(0, 1)
 	nameStyle := styles.ListItemTitle
 	if selected {
 		rowStyle = styles.Selection.Copy().Padding(0, 1)
-		nameStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(m.theme.Palette.SelectionText)
+		nameStyle = m.styles.SelectionTitle
 	}
 	nameLine := nameStyle.Render(truncate(conn.Name, max(8, width-2)))
 	metaLine := styles.ListItemMeta.Render(truncate(m.connectionListMeta(conn), max(8, width-2)))
@@ -416,7 +414,7 @@ func (m *Model) connectionListMeta(conn Connection) string {
 }
 
 func (m *Model) viewConnectionListTitle() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	title := styles.SectionTitle.Render(m.translator.T("home.connections"))
 	if label := m.currentScopeLabel(); label != "" {
 		return lipgloss.JoinHorizontal(lipgloss.Left, title, " ", styles.BadgeMuted.Render("("+label+")"))
@@ -426,9 +424,9 @@ func (m *Model) viewConnectionListTitle() string {
 
 func (m *Model) connectionListScopeStyle() lipgloss.Style {
 	if m.home.listScope == domain.ConnectionListScopeAll {
-		return m.theme.Styles.SectionTitle
+		return m.styles.SectionTitle
 	}
-	return m.theme.Styles.GroupScope
+	return m.styles.GroupScope
 }
 
 func (m *Model) currentScopeLabel() string {
@@ -443,7 +441,7 @@ func (m *Model) currentScopeLabel() string {
 }
 
 func (m *Model) viewConnectionDetail(width int, height int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	title := styles.SectionTitle.Render(m.translator.T("home.details"))
 	conn := m.currentConnection()
 	if conn == nil {
@@ -502,11 +500,11 @@ func (m *Model) homePanelWidths(contentWidth int) (int, int, int) {
 }
 
 func (m *Model) homeScopeBadge() string {
-	return m.theme.Styles.BadgeMuted.Render(m.currentScopeLabel())
+	return m.styles.BadgeMuted.Render(m.currentScopeLabel())
 }
 
 func (m *Model) homeCountBadge() string {
-	return m.theme.Styles.BadgeAccent.Render(fmt.Sprintf("%d", len(m.home.connections)))
+	return m.styles.BadgeAccent.Render(fmt.Sprintf("%d", len(m.home.connections)))
 }
 
 func (m *Model) statusBarWidth() int {
@@ -523,7 +521,7 @@ func (m *Model) statusBarWidth() int {
 }
 
 func (m *Model) detailLine(labelKey string, value string, width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	labelWidth := min(10, max(6, width/3))
 	valueWidth := max(8, width-labelWidth-2)
 	label := styles.SubtleText.Width(labelWidth).Render(m.translator.T(labelKey))

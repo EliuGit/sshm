@@ -150,6 +150,7 @@ macOS:   ~/Library/Application Support/sshm/
 ```toml
 [app]
 language = "en"
+theme = "dark"
 
 [storage]
 database_path = "data/sshm.db"
@@ -157,6 +158,13 @@ database_path = "data/sshm.db"
 [ssh]
 default_private_key_path = "~/.ssh/id_rsa"
 ```
+
+`theme` 当前支持：
+
+- `dark`：默认主题，适合深色终端
+- `dracula`：高对比暗色主题，强调色更鲜明
+- `light`：适合亮色终端
+- `nord`：冷静低饱和暗色主题，适合长时间使用
 
 ## 导入 `ssh_config`
 

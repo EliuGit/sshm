@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -14,13 +15,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func newInput(theme Theme, placeholder string, width int) textinput.Model {
+func newInput(styles themes.Styles, placeholder string, width int) textinput.Model {
 	input := textinput.New()
 	input.Placeholder = placeholder
 	input.Width = width
 	input.Prompt = "> "
-	input.PromptStyle = theme.Styles.SubtleText
-	input.PlaceholderStyle = theme.Styles.MutedText
+	input.PromptStyle = styles.SubtleText
+	input.PlaceholderStyle = styles.MutedText
 	return input
 }
 
@@ -205,7 +206,7 @@ func renderSizedBlock(style lipgloss.Style, outerWidth int, outerHeight int, con
 	return block.Render(content)
 }
 
-func localizedShortcutHelpWidth(translator *i18n.Translator, theme Theme, width int, items ...string) string {
+func localizedShortcutHelpWidth(translator *i18n.Translator, styles themes.Styles, width int, items ...string) string {
 	cells := make([]shortcutHelpCell, 0, len(items)/2)
 	for index := 0; index+1 < len(items); index += 2 {
 		cells = append(cells, shortcutHelpCell{
@@ -213,7 +214,7 @@ func localizedShortcutHelpWidth(translator *i18n.Translator, theme Theme, width 
 			label: translator.T(items[index+1]),
 		})
 	}
-	return theme.Styles.HelpText.Render(renderShortcutGrid(cells, width, theme))
+	return styles.HelpText.Render(renderShortcutGrid(cells, width, styles))
 }
 
 type shortcutHelpCell struct {
@@ -221,7 +222,7 @@ type shortcutHelpCell struct {
 	label string
 }
 
-func renderShortcutGrid(cells []shortcutHelpCell, width int, theme Theme) string {
+func renderShortcutGrid(cells []shortcutHelpCell, width int, styles themes.Styles) string {
 	if len(cells) == 0 {
 		return ""
 	}
@@ -229,23 +230,23 @@ func renderShortcutGrid(cells []shortcutHelpCell, width int, theme Theme) string
 	if width <= 0 {
 		parts := make([]string, 0, len(cells))
 		for _, cell := range cells {
-			parts = append(parts, renderShortcutCell(cell, 0, theme))
+			parts = append(parts, renderShortcutCell(cell, 0, styles))
 		}
 		return strings.Join(parts, gap)
 	}
 
 	for columns := min(6, len(cells)); columns >= 1; columns-- {
-		columnWidths, ok := shortcutColumnWidths(cells, columns, width, lipgloss.Width(gap), theme)
+		columnWidths, ok := shortcutColumnWidths(cells, columns, width, lipgloss.Width(gap), styles)
 		if !ok {
 			continue
 		}
-		return renderShortcutRows(cells, columns, columnWidths, gap, theme)
+		return renderShortcutRows(cells, columns, columnWidths, gap, styles)
 	}
 
-	return renderShortcutRows(cells, 1, []int{width}, gap, theme)
+	return renderShortcutRows(cells, 1, []int{width}, gap, styles)
 }
 
-func shortcutColumnWidths(cells []shortcutHelpCell, columns int, width int, gapWidth int, theme Theme) ([]int, bool) {
+func shortcutColumnWidths(cells []shortcutHelpCell, columns int, width int, gapWidth int, styles themes.Styles) ([]int, bool) {
 	available := width - gapWidth*(columns-1)
 	if available <= 0 {
 		return nil, false
@@ -255,7 +256,7 @@ func shortcutColumnWidths(cells []shortcutHelpCell, columns int, width int, gapW
 	desiredWidths := make([]int, columns)
 	for index, cell := range cells {
 		column := index % columns
-		keyWidth := lipgloss.Width(theme.Styles.Keycap.Render(cell.key))
+		keyWidth := lipgloss.Width(styles.Keycap.Render(cell.key))
 		labelWidth := lipgloss.Width(cell.label)
 		minLabelWidth := min(3, labelWidth)
 		minWidth := keyWidth
@@ -300,7 +301,7 @@ func shortcutColumnWidths(cells []shortcutHelpCell, columns int, width int, gapW
 	return widths, true
 }
 
-func renderShortcutRows(cells []shortcutHelpCell, columns int, columnWidths []int, gap string, theme Theme) string {
+func renderShortcutRows(cells []shortcutHelpCell, columns int, columnWidths []int, gap string, styles themes.Styles) string {
 	lines := make([]string, 0, (len(cells)+columns-1)/columns)
 	for rowStart := 0; rowStart < len(cells); rowStart += columns {
 		parts := []string{}
@@ -310,7 +311,7 @@ func renderShortcutRows(cells []shortcutHelpCell, columns int, columnWidths []in
 				break
 			}
 			width := columnWidths[column]
-			rendered := renderShortcutCell(cells[index], width, theme)
+			rendered := renderShortcutCell(cells[index], width, styles)
 			parts = append(parts, lipgloss.NewStyle().Width(width).Render(rendered))
 		}
 		lines = append(lines, strings.Join(parts, gap))
@@ -318,17 +319,17 @@ func renderShortcutRows(cells []shortcutHelpCell, columns int, columnWidths []in
 	return strings.Join(lines, "\n")
 }
 
-func renderShortcutCell(cell shortcutHelpCell, width int, theme Theme) string {
-	key := theme.Styles.Keycap.Render(cell.key)
+func renderShortcutCell(cell shortcutHelpCell, width int, styles themes.Styles) string {
+	key := styles.Keycap.Render(cell.key)
 	if cell.label == "" {
 		return key
 	}
 	if width <= 0 {
-		return key + " " + theme.Styles.ShortcutLabel.Render(cell.label)
+		return key + " " + styles.ShortcutLabel.Render(cell.label)
 	}
 	labelWidth := width - lipgloss.Width(key) - 1
 	if labelWidth <= 0 {
 		return key
 	}
-	return key + " " + theme.Styles.ShortcutLabel.Render(truncate(cell.label, labelWidth))
+	return key + " " + styles.ShortcutLabel.Render(truncate(cell.label, labelWidth))
 }

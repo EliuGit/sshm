@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -166,7 +167,7 @@ func (m *Model) prepareTransfer(action string, sourcePath string, targetPath str
 }
 
 func (m *Model) viewBrowser() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	viewportWidth := m.width
 	if viewportWidth == 0 {
 		viewportWidth = 120
@@ -202,7 +203,7 @@ func (m *Model) viewBrowser() string {
 }
 
 func (m *Model) renderBrowserPanel(panel filePanel, width int, height int, focused bool) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	style := styles.Panel
 	if focused {
 		style = styles.FocusedPanel
@@ -269,7 +270,7 @@ func (m *Model) renderBrowserPanel(panel filePanel, width int, height int, focus
 }
 
 func (m *Model) renderBrowserPanelHeader(panel filePanel, width int, focused bool) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	panelTitleStyle := styles.BadgeMuted
 	if focused {
 		panelTitleStyle = styles.BadgeAccent
@@ -293,7 +294,7 @@ func (m *Model) renderBrowserPanelHeader(panel filePanel, width int, focused boo
 }
 
 func (m *Model) renderBrowserFooter(width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	innerWidth := max(12, width-styles.Panel.GetHorizontalFrameSize())
 	switch m.overlay {
 	case overlayBrowserInput:
@@ -304,14 +305,14 @@ func (m *Model) renderBrowserFooter(width int) string {
 		return renderSizedBlock(styles.Panel, width, 0, strings.Join([]string{
 			styles.FieldLabel.Render(title),
 			m.browser.input.View(),
-			localizedShortcutHelpWidth(m.translator, m.theme, max(24, innerWidth),
+			localizedShortcutHelpWidth(m.translator, m.styles, max(24, innerWidth),
 				"enter", "shortcut.confirm",
 				"esc", "shortcut.cancel",
 			),
 		}, "\n"))
 	default:
 		return renderSizedBlock(styles.Panel, width, 0,
-			localizedShortcutHelpWidth(m.translator, m.theme, max(24, innerWidth),
+			localizedShortcutHelpWidth(m.translator, m.styles, max(24, innerWidth),
 				"enter/l", "shortcut.open",
 				"tab", "shortcut.switch",
 				"c-u", "shortcut.upload",
@@ -324,7 +325,7 @@ func (m *Model) renderBrowserFooter(width int) string {
 }
 
 func (m *Model) viewBrowserHeader(width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	connection := styles.PageTitle.Render(m.translator.T("browser.title"))
 	target := styles.SubtleText.Render(m.translator.T("browser.subtitle", m.browser.connection.Username, m.browser.connection.Host))
 	active := styles.BadgeAccent.Render(m.activeBrowserPanel().title)
@@ -356,7 +357,7 @@ func (m *Model) browserOverlayView(contentWidth int, _ int) string {
 }
 
 func (m *Model) viewBrowserOverwriteConfirm(contentWidth int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	dialogWidth := min(72, max(46, contentWidth-6))
 	innerWidth := max(20, dialogWidth-styles.Dialog.GetHorizontalFrameSize())
 	yesButton := "[ " + m.translator.T("browser.yes") + " ]"
@@ -374,7 +375,7 @@ func (m *Model) viewBrowserOverwriteConfirm(contentWidth int) string {
 		"",
 		lipgloss.JoinHorizontal(lipgloss.Left, yesButton, "  ", noButton),
 		"",
-		localizedShortcutHelpWidth(m.translator, m.theme, innerWidth,
+		localizedShortcutHelpWidth(m.translator, m.styles, innerWidth,
 			"←/→", "shortcut.choose",
 			"enter/y", "shortcut.confirm",
 			"esc/n", "shortcut.cancel",
@@ -463,8 +464,8 @@ func (m *Model) activeBrowserPanel() *filePanel {
 	return &m.browser.remotePanel
 }
 
-func newBrowserState(translator *i18n.Translator, theme Theme) browserState {
-	input := newInput(theme, "", 48)
+func newBrowserState(translator *i18n.Translator, styles themes.Styles) browserState {
+	input := newInput(styles, "", 48)
 	return browserState{
 		localPanel: filePanel{
 			panel: domain.LocalPanel,

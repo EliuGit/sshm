@@ -34,7 +34,7 @@ func (m *Model) handleHomeOverlayKey(keyMsg tea.KeyMsg) (tea.Model, tea.Cmd, boo
 }
 
 func (m *Model) homeOverlayView(contentWidth int, contentHeight int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	switch m.overlay {
 	case overlayDelete:
 		return styles.Dialog.Width(44).Render(strings.Join([]string{

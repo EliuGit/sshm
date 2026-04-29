@@ -8,6 +8,7 @@ import (
 	"sshm/internal/app"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -17,7 +18,7 @@ import (
 type Model struct {
 	services              *app.Services
 	translator            *i18n.Translator
-	theme                 Theme
+	styles                themes.Styles
 	startupDir            string
 	defaultPrivateKeyPath string
 	result                AppResult
@@ -28,22 +29,25 @@ type Model struct {
 }
 
 func NewModel(services *app.Services, translator *i18n.Translator, startupDir string, defaultPrivateKeyPath string) *Model {
+	return NewModelWithStyles(services, translator, startupDir, defaultPrivateKeyPath, themes.MustStyles(themes.DefaultName))
+}
+
+func NewModelWithStyles(services *app.Services, translator *i18n.Translator, startupDir string, defaultPrivateKeyPath string, styles themes.Styles) *Model {
 	if translator == nil {
 		translator, _ = i18n.New("en")
 	}
-	theme := newDefaultTheme()
 	searchInput := textinput.New()
 	searchInput.Placeholder = translator.T("home.search_placeholder")
 	searchInput.Prompt = translator.T("home.search_prompt")
 	searchInput.Width = 40
-	searchInput.PromptStyle = theme.Styles.SubtleText
-	searchInput.PlaceholderStyle = theme.Styles.SubtleText
+	searchInput.PromptStyle = styles.SubtleText
+	searchInput.PlaceholderStyle = styles.SubtleText
 	searchInput.Blur()
 
 	return &Model{
 		services:              services,
 		translator:            translator,
-		theme:                 theme,
+		styles:                styles,
 		startupDir:            startupDir,
 		defaultPrivateKeyPath: defaultPrivateKeyPath,
 		shellState: shellState{
@@ -54,12 +58,12 @@ func NewModel(services *app.Services, translator *i18n.Translator, startupDir st
 			home: homeScreenState{
 				searchInput: searchInput,
 			},
-			form:    newFormState(nil, translator, defaultPrivateKeyPath, theme),
-			browser: newBrowserState(translator, theme),
-			imports: newImportState(translator, theme),
+			form:    newFormState(nil, translator, defaultPrivateKeyPath, styles),
+			browser: newBrowserState(translator, styles),
+			imports: newImportState(translator, styles),
 		},
 		overlayState: overlayState{
-			groups: newGroupPanelState(translator, theme),
+			groups: newGroupPanelState(translator, styles),
 		},
 	}
 }
@@ -306,7 +310,7 @@ func (m *Model) completeHomeProbe(msg homeProbeDoneMsg) (tea.Model, tea.Cmd) {
 
 func (m *Model) openBrowserForConnection(conn Connection, session app.RemoteSession) (tea.Model, tea.Cmd) {
 	m.page = pageBrowser
-	m.browser = newBrowserState(m.translator, m.theme)
+	m.browser = newBrowserState(m.translator, m.styles)
 	m.browser.connectionID = conn.ID
 	m.browser.connection = conn
 	m.browser.session = session

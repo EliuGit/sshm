@@ -13,6 +13,7 @@ const (
 	appDirName            = "sshm"
 	configFileName        = "config.toml"
 	defaultLanguage       = "en"
+	defaultTheme          = "dark"
 	defaultDatabasePath   = "data/sshm.db"
 	defaultPrivateKeyPath = "~/.ssh/id_rsa"
 )
@@ -25,6 +26,7 @@ type FileConfig struct {
 
 type AppConfig struct {
 	Language string
+	Theme    string
 }
 
 type StorageConfig struct {
@@ -39,6 +41,7 @@ type RuntimeConfig struct {
 	ConfigDir             string
 	ConfigPath            string
 	Language              string
+	Theme                 string
 	DatabasePath          string
 	KeyPath               string
 	KnownHostsPath        string
@@ -75,6 +78,7 @@ func Load() (RuntimeConfig, error) {
 		ConfigDir:             configDir,
 		ConfigPath:            configPath,
 		Language:              fileConfig.App.Language,
+		Theme:                 fileConfig.App.Theme,
 		DatabasePath:          resolveConfigPath(configDir, fileConfig.Storage.DatabasePath),
 		KeyPath:               filepath.Join(configDir, "app.key"),
 		KnownHostsPath:        filepath.Join(configDir, "known_hosts"),
@@ -117,6 +121,7 @@ func writeDefaultConfig(path string) error {
 	content := strings.Join([]string{
 		"[app]",
 		"language = " + strconv.Quote(config.App.Language),
+		"theme = " + strconv.Quote(config.App.Theme),
 		"",
 		"[storage]",
 		"database_path = " + strconv.Quote(config.Storage.DatabasePath),
@@ -160,6 +165,8 @@ func readConfig(path string) (FileConfig, error) {
 		switch section + "." + strings.TrimSpace(key) {
 		case "app.language":
 			config.App.Language = parsedValue
+		case "app.theme":
+			config.App.Theme = parsedValue
 		case "storage.database_path":
 			config.Storage.DatabasePath = parsedValue
 		case "ssh.default_private_key_path":
@@ -174,7 +181,7 @@ func readConfig(path string) (FileConfig, error) {
 
 func defaultFileConfig() FileConfig {
 	return FileConfig{
-		App:     AppConfig{Language: defaultLanguage},
+		App:     AppConfig{Language: defaultLanguage, Theme: defaultTheme},
 		Storage: StorageConfig{DatabasePath: defaultDatabasePath},
 		SSH:     SSHConfig{DefaultPrivateKeyPath: defaultPrivateKeyPath},
 	}
@@ -183,6 +190,10 @@ func defaultFileConfig() FileConfig {
 func applyDefaults(config *FileConfig) {
 	if strings.TrimSpace(config.App.Language) == "" {
 		config.App.Language = defaultLanguage
+	}
+	config.App.Theme = normalizeThemeName(config.App.Theme)
+	if config.App.Theme == "" {
+		config.App.Theme = defaultTheme
 	}
 	if strings.TrimSpace(config.Storage.DatabasePath) == "" {
 		config.Storage.DatabasePath = defaultDatabasePath
@@ -233,6 +244,10 @@ func stripComment(line string) string {
 		}
 	}
 	return line
+}
+
+func normalizeThemeName(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func parseStringValue(value string) (string, error) {

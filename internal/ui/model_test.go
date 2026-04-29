@@ -169,8 +169,8 @@ func TestConnectionListTitleDoesNotRepeatFilter(t *testing.T) {
 	if strings.Contains(title, "web") {
 		t.Fatalf("title = %q, want no filter text", title)
 	}
-	if fmt.Sprint(model.connectionListScopeStyle().GetForeground()) != fmt.Sprint(model.theme.Styles.GroupScope.GetForeground()) {
-		t.Fatalf("scope color = %v, want %v", model.connectionListScopeStyle().GetForeground(), model.theme.Styles.GroupScope.GetForeground())
+	if fmt.Sprint(model.connectionListScopeStyle().GetForeground()) != fmt.Sprint(model.styles.GroupScope.GetForeground()) {
+		t.Fatalf("scope color = %v, want %v", model.connectionListScopeStyle().GetForeground(), model.styles.GroupScope.GetForeground())
 	}
 }
 
@@ -187,8 +187,8 @@ func TestConnectionListTitleShowsAllGroupScope(t *testing.T) {
 	if !strings.Contains(title, "(全部)") {
 		t.Fatalf("title = %q", title)
 	}
-	if fmt.Sprint(model.connectionListScopeStyle().GetForeground()) != fmt.Sprint(model.theme.Styles.SectionTitle.GetForeground()) {
-		t.Fatalf("scope color = %v, want %v", model.connectionListScopeStyle().GetForeground(), model.theme.Styles.SectionTitle.GetForeground())
+	if fmt.Sprint(model.connectionListScopeStyle().GetForeground()) != fmt.Sprint(model.styles.SectionTitle.GetForeground()) {
+		t.Fatalf("scope color = %v, want %v", model.connectionListScopeStyle().GetForeground(), model.styles.SectionTitle.GetForeground())
 	}
 }
 
@@ -203,8 +203,8 @@ func TestHomeSearchBlurredValueUsesHighlightColor(t *testing.T) {
 	model.home.searchInput.SetValue("prod")
 
 	model.viewHomeSearch(32)
-	if fmt.Sprint(model.home.searchInput.TextStyle.GetForeground()) != fmt.Sprint(model.theme.Styles.SearchValueBlurred.GetForeground()) {
-		t.Fatalf("text color = %v, want %v", model.home.searchInput.TextStyle.GetForeground(), model.theme.Styles.SearchValueBlurred.GetForeground())
+	if fmt.Sprint(model.home.searchInput.TextStyle.GetForeground()) != fmt.Sprint(model.styles.SearchValueBlurred.GetForeground()) {
+		t.Fatalf("text color = %v, want %v", model.home.searchInput.TextStyle.GetForeground(), model.styles.SearchValueBlurred.GetForeground())
 	}
 }
 
@@ -570,7 +570,7 @@ func TestFormKeepPasswordDependsOnOriginalAuthType(t *testing.T) {
 		Port:     22,
 		Username: "root",
 		AuthType: domain.AuthTypePrivateKey,
-	}, translator, "~/.ssh/id_rsa", model.theme)
+	}, translator, "~/.ssh/id_rsa", model.styles)
 	model.form.authType = domain.AuthTypePassword
 	model.form.keepPassword = true
 	if model.form.shouldKeepPassword() {
@@ -584,7 +584,7 @@ func TestFormKeepPasswordDependsOnOriginalAuthType(t *testing.T) {
 		Port:     22,
 		Username: "root",
 		AuthType: domain.AuthTypePassword,
-	}, translator, "~/.ssh/id_rsa", model.theme)
+	}, translator, "~/.ssh/id_rsa", model.styles)
 	if !model.form.shouldKeepPassword() {
 		t.Fatal("shouldKeepPassword() = false, want true for existing password auth")
 	}
@@ -934,7 +934,7 @@ func TestImportPanelUsesEscToQuitAndJKToMove(t *testing.T) {
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
 	model.page = pageImport
-	model.imports = newImportState(translator, model.theme)
+	model.imports = newImportState(translator, model.styles)
 
 	pathView := model.viewImport()
 	if !strings.Contains(pathView, "esc") || strings.Contains(pathView, "\nq ") {
@@ -970,7 +970,7 @@ func TestImportFurtherEditClearsErrorText(t *testing.T) {
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
 	model.page = pageImport
-	model.imports = newImportState(translator, model.theme)
+	model.imports = newImportState(translator, model.styles)
 	model.imports.errorText = "配置读取失败"
 
 	updated, _ := model.updateImport(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
@@ -989,7 +989,7 @@ func TestFormFurtherEditClearsErrorMessage(t *testing.T) {
 	}
 	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
 	model.page = pageForm
-	model.form = newFormState(nil, translator, "~/.ssh/id_rsa", model.theme)
+	model.form = newFormState(nil, translator, "~/.ssh/id_rsa", model.styles)
 	model.form.errorMessage = "主机不能为空"
 
 	updated, _ := model.updateForm(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})

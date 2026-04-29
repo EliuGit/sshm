@@ -21,7 +21,7 @@ func (formScreen) update(model *Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model.updateForm(msg)
 }
 func (formScreen) view(model *Model) string {
-	return model.theme.Styles.App.Render(model.viewForm())
+	return model.styles.App.Render(model.viewForm())
 }
 
 type browserScreen struct{}
@@ -37,7 +37,7 @@ func (importScreen) update(model *Model, msg tea.Msg) (tea.Model, tea.Cmd) {
 	return model.updateImport(msg)
 }
 func (importScreen) view(model *Model) string {
-	return model.theme.Styles.App.Render(model.viewImport())
+	return model.styles.App.Render(model.viewImport())
 }
 
 func (m *Model) currentScreen() screen {

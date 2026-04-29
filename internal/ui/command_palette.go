@@ -2,6 +2,7 @@ package ui
 
 import (
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -9,12 +10,12 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func newCommandPaletteState(translator *i18n.Translator, theme Theme) commandPaletteState {
+func newCommandPaletteState(translator *i18n.Translator, styles themes.Styles) commandPaletteState {
 	input := textinput.New()
 	input.Placeholder = translator.T("palette.placeholder")
 	input.Prompt = translator.T("palette.prompt")
-	input.PromptStyle = theme.Styles.SubtleText
-	input.PlaceholderStyle = theme.Styles.MutedText
+	input.PromptStyle = styles.SubtleText
+	input.PlaceholderStyle = styles.MutedText
 	input.Width = 36
 	input.Blur()
 	return commandPaletteState{input: input}
@@ -25,7 +26,7 @@ func (m *Model) openCommandPalette() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.clearStaleErrorStatus()
-	m.palette = newCommandPaletteState(m.translator, m.theme)
+	m.palette = newCommandPaletteState(m.translator, m.styles)
 	m.palette.input.Focus()
 	m.overlay = overlayCommandPalette
 	return m, nil
@@ -105,7 +106,7 @@ func (m *Model) commandPaletteTitle() string {
 }
 
 func (m *Model) viewCommandPalette(width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	actions := m.filteredCommandActions()
 	dialogWidth := min(64, max(42, width-8))
 	m.palette.input.Width = max(18, dialogWidth-8)
@@ -133,7 +134,7 @@ func (m *Model) viewCommandPalette(width int) string {
 	}
 
 	lines = append(lines, "",
-		localizedShortcutHelpWidth(m.translator, m.theme, max(24, dialogWidth-6),
+		localizedShortcutHelpWidth(m.translator, m.styles, max(24, dialogWidth-6),
 			"j/k", "shortcut.move",
 			"enter", "shortcut.confirm",
 			"esc", "shortcut.cancel",
@@ -143,7 +144,7 @@ func (m *Model) viewCommandPalette(width int) string {
 }
 
 func (m *Model) renderCommandActionRow(action commandAction, selected bool, width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	titleWidth := max(10, width-10)
 	content := lipgloss.JoinHorizontal(
 		lipgloss.Center,

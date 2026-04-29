@@ -9,6 +9,7 @@ import (
 	"sshm/internal/i18n"
 	"sshm/internal/security"
 	"sshm/internal/store/sqlite"
+	"sshm/internal/themes"
 	sshtransport "sshm/internal/transport/ssh"
 	"sshm/internal/ui"
 
@@ -27,6 +28,10 @@ func main() {
 	translator, err := i18n.New(runtimeConfig.Language)
 	if err != nil {
 		fatal(nil, err)
+	}
+	styles, err := themes.ResolveStyles(runtimeConfig.Theme)
+	if err != nil {
+		fatal(translator, err)
 	}
 	if err := config.EnsurePaths(runtimeConfig); err != nil {
 		fatal(translator, err)
@@ -53,7 +58,7 @@ func main() {
 	}
 
 	for {
-		model := ui.NewModel(services, translator, startupDir, runtimeConfig.DefaultPrivateKeyPath)
+		model := ui.NewModelWithStyles(services, translator, startupDir, runtimeConfig.DefaultPrivateKeyPath, styles)
 		program := tea.NewProgram(model, tea.WithAltScreen())
 		if _, err := program.Run(); err != nil {
 			fatal(translator, err)

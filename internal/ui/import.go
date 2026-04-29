@@ -4,18 +4,19 @@ import (
 	"fmt"
 	"sshm/internal/domain"
 	"sshm/internal/i18n"
+	"sshm/internal/themes"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-func newImportState(translator *i18n.Translator, theme Theme) importState {
+func newImportState(translator *i18n.Translator, styles themes.Styles) importState {
 	input := textinput.New()
 	input.Placeholder = "~/.ssh/config"
 	input.Prompt = translator.T("import.path_prompt")
-	input.PromptStyle = theme.Styles.SubtleText
-	input.PlaceholderStyle = theme.Styles.MutedText
+	input.PromptStyle = styles.SubtleText
+	input.PlaceholderStyle = styles.MutedText
 	input.Width = 56
 	input.SetValue("~/.ssh/config")
 	input.Focus()
@@ -74,7 +75,7 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) viewImport() string {
-	styles := m.theme.Styles
+	styles := m.styles
 	title := styles.PageTitle.Render(m.translator.T("import.title"))
 	if m.imports.step == importStepPath {
 		lines := []string{
@@ -83,7 +84,7 @@ func (m *Model) viewImport() string {
 			"",
 			m.imports.path.View(),
 			"",
-			localizedShortcutHelpWidth(m.translator, m.theme, 72,
+			localizedShortcutHelpWidth(m.translator, m.styles, 72,
 				"enter/c-s", "import.shortcut_preview",
 				"esc", "import.shortcut_back",
 			),
@@ -121,7 +122,7 @@ func (m *Model) viewImport() string {
 	if m.imports.errorText != "" {
 		lines = append(lines, "", styles.ErrorText.Render(m.imports.errorText))
 	}
-	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.theme, 72,
+	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.styles, 72,
 		"j/k", "import.shortcut_move",
 		"space", "import.shortcut_action",
 		"enter/c-s", "import.shortcut_import",
@@ -131,7 +132,7 @@ func (m *Model) viewImport() string {
 }
 
 func (m *Model) renderImportRow(item domain.ImportCandidate, selected bool, width int) string {
-	styles := m.theme.Styles
+	styles := m.styles
 	action := m.importActionLabel(item.Action)
 	group := item.GroupName
 	if strings.TrimSpace(group) == "" {

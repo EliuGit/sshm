@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"sshm/internal/themes"
 	"strings"
 	"testing"
 
@@ -18,7 +19,7 @@ func TestRenderShortcutGridAlignsWrappedColumns(t *testing.T) {
 		{key: "enter", label: "eeeeeeee"},
 		{key: "enter", label: "ffffffff"},
 	}
-	got := renderShortcutGrid(cells, 45, newDefaultTheme())
+	got := renderShortcutGrid(cells, 45, themes.MustStyles(themes.DefaultName))
 	lines := strings.Split(got, "\n")
 
 	if len(lines) != 2 {
@@ -39,7 +40,7 @@ func TestRenderShortcutGridAlignsWrappedColumns(t *testing.T) {
 func TestRenderShortcutCellKeepsKeyAndTruncatesLabel(t *testing.T) {
 	t.Parallel()
 
-	got := renderShortcutCell(shortcutHelpCell{key: "enter", label: "very-long-label"}, 12, newDefaultTheme())
+	got := renderShortcutCell(shortcutHelpCell{key: "enter", label: "very-long-label"}, 12, themes.MustStyles(themes.DefaultName))
 
 	if !strings.Contains(got, "enter") {
 		t.Fatalf("key should stay visible: %q", got)
