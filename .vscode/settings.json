@@ -4,6 +4,8 @@
         "charmbracelet",
         "ciphertext",
         "gossh",
+        "Keycap",
+        "lipgloss",
         "nullecho",
         "sshm",
         "textinput"

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"sshm/internal/domain"
-	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -83,44 +82,52 @@ CREATE INDEX IF NOT EXISTS idx_connections_last_used_at ON connections(last_used
 }
 
 func (r *Repository) ListConnections(opts domain.ConnectionListOptions) ([]domain.Connection, error) {
-	rows, err := r.db.Query(`
+	// 设计说明：
+	// 1. 连接列表的 Scope / Query 过滤必须在数据库侧完成，避免“全量拉取后再由 Go 逐条过滤”的线性放大。
+	// 2. 当前阶段先使用普通 SQL 下推条件，优先根治应用层全表扫描问题。
+	// 3. 查询条件只负责列表筛选，不改变现有排序语义，确保 UI / CLI 展示结果与现有交互保持一致。
+	baseSQL := `
 SELECT c.id, c.group_id, COALESCE(g.name, ''), c.name, c.host, c.port, c.username, c.auth_type, c.private_key_path, c.description, c.created_at, c.updated_at, c.last_used_at
-FROM connections
-AS c LEFT JOIN connection_groups AS g ON g.id = c.group_id
-ORDER BY CASE WHEN c.last_used_at IS NULL THEN 1 ELSE 0 END, c.last_used_at DESC, c.name COLLATE NOCASE ASC`)
+FROM connections AS c
+LEFT JOIN connection_groups AS g ON g.id = c.group_id`
+	whereClauses := make([]string, 0, 2)
+	args := make([]any, 0, 6)
+	switch opts.Scope {
+	case domain.ConnectionListScopeUngrouped:
+		whereClauses = append(whereClauses, "c.group_id IS NULL")
+	case domain.ConnectionListScopeGroup:
+		whereClauses = append(whereClauses, "c.group_id = ?")
+		args = append(args, opts.GroupID)
+	}
+	query := buildConnectionQueryPattern(opts.Query)
+	if query != "" {
+		whereClauses = append(whereClauses, `(
+	c.name LIKE ? COLLATE NOCASE OR
+	c.host LIKE ? COLLATE NOCASE OR
+	c.username LIKE ? COLLATE NOCASE OR
+	c.description LIKE ? COLLATE NOCASE OR
+	COALESCE(g.name, '') LIKE ? COLLATE NOCASE
+)`)
+		for range 5 {
+			args = append(args, query)
+		}
+	}
+	sqlText := baseSQL
+	if len(whereClauses) > 0 {
+		sqlText += "\nWHERE " + joinClauses(whereClauses, " AND ")
+	}
+	sqlText += "\nORDER BY CASE WHEN c.last_used_at IS NULL THEN 1 ELSE 0 END, c.last_used_at DESC, c.name COLLATE NOCASE ASC"
+	rows, err := r.db.Query(sqlText, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	query := strings.ToLower(strings.TrimSpace(opts.Query))
 	var items []domain.Connection
 	for rows.Next() {
 		conn, err := scanConnection(rows)
 		if err != nil {
 			return nil, err
-		}
-		switch opts.Scope {
-		case domain.ConnectionListScopeUngrouped:
-			if conn.GroupID != nil {
-				continue
-			}
-		case domain.ConnectionListScopeGroup:
-			if conn.GroupID == nil || *conn.GroupID != opts.GroupID {
-				continue
-			}
-		}
-		if query != "" {
-			haystack := strings.ToLower(strings.Join([]string{
-				conn.Name,
-				conn.Host,
-				conn.Username,
-				conn.Description,
-				conn.GroupName,
-			}, " "))
-			if !strings.Contains(haystack, query) {
-				continue
-			}
 		}
 		items = append(items, conn)
 	}
@@ -409,4 +416,44 @@ func nullableInt64(value *int64) any {
 		return nil
 	}
 	return *value
+}
+
+func buildConnectionQueryPattern(query string) string {
+	query = trimSQLSearchQuery(query)
+	if query == "" {
+		return ""
+	}
+	return "%" + query + "%"
+}
+
+func trimSQLSearchQuery(query string) string {
+	start := 0
+	for start < len(query) && isSQLSpace(query[start]) {
+		start++
+	}
+	end := len(query)
+	for end > start && isSQLSpace(query[end-1]) {
+		end--
+	}
+	return query[start:end]
+}
+
+func isSQLSpace(ch byte) bool {
+	switch ch {
+	case ' ', '\t', '\n', '\r':
+		return true
+	default:
+		return false
+	}
+}
+
+func joinClauses(parts []string, sep string) string {
+	if len(parts) == 0 {
+		return ""
+	}
+	result := parts[0]
+	for _, part := range parts[1:] {
+		result += sep + part
+	}
+	return result
 }
