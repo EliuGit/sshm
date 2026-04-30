@@ -1,4 +1,20 @@
-name: release
+# 背景与参考结论：
+# 1. 现有发布流依赖 GitHub 的 ubuntu/windows 多 runner 矩阵，但 Go 在 CGO_ENABLED=0 时可直接从单个 Linux runner 交叉编译到
+#    linux/darwin/windows，因此没有必要继续绑定 windows-latest。
+# 2. 保留 GitHub 版 workflow，继续使用 GitHub Release；只把“多 runner 构建”收敛为“单 runner 交叉编译”，降低调度和维护成本。
+# 3. 产物命名沿用现有约定，避免影响既有下载链接与版本认知。
+#
+# 关键实现思路：
+# 1. workflow_dispatch 手动输入版本号与源码 ref。
+# 2. 单个 ubuntu runner 先执行 Linux 测试，再依次交叉编译 linux/darwin/windows。
+# 3. Linux/macOS 产物打包为 tar.gz，Windows 产物在 Linux runner 上通过内联 Go 程序打包为 zip，避免依赖额外系统工具。
+# 4. 最后直接调用 gh CLI 创建或更新 GitHub Release。
+#
+# 注意事项与边界：
+# 1. 这里的 go test 仍然只在 Linux 环境执行；跨平台产物只做编译验证，不做目标系统运行验证。
+# 2. 版本号仍要求包含 v 前缀，例如 v0.1.1。
+# 3. 如果仓库默认分支不是 main，需要在手动触发时显式传入 git_ref。
+name: github-release
 
 on:
   workflow_dispatch:
@@ -8,9 +24,9 @@ on:
         required: true
         type: string
       git_ref:
-        description: 要构建的分支、tag 或 commit，默认 master
+        description: 要构建的分支、tag 或 commit，默认 main
         required: false
-        default: master
+        default: main
         type: string
 
 permissions:
@@ -20,37 +36,9 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  build:
-    name: 构建 ${{ matrix.target_name }}
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-latest
-            target_name: linux-amd64
-            goos: linux
-            goarch: amd64
-            artifact_name: release-linux-amd64
-            binary_name: sshm
-          - runner: ubuntu-latest
-            target_name: darwin-amd64
-            goos: darwin
-            goarch: amd64
-            artifact_name: release-darwin-amd64
-            binary_name: sshm
-          - runner: ubuntu-latest
-            target_name: darwin-arm64
-            goos: darwin
-            goarch: arm64
-            artifact_name: release-darwin-arm64
-            binary_name: sshm
-          - runner: windows-latest
-            target_name: windows-amd64
-            goos: windows
-            goarch: amd64
-            artifact_name: release-windows-amd64
-            binary_name: sshm.exe
+  release:
+    name: 交叉编译并发布 GitHub Release
+    runs-on: ubuntu-latest
 
     steps:
       - name: 拉取代码
@@ -64,140 +52,132 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      - name: 输出 Linux 环境信息
-        if: matrix.goos == 'linux'
+      - name: 输出环境信息
         shell: bash
         run: |
           go version
+          gh --version
 
-      - name: 输出 Windows 环境信息
-        if: matrix.goos == 'windows'
-        shell: pwsh
-        run: |
-          go version
-
-      - name: 运行 Linux 测试
-        if: matrix.goos == 'linux'
+      - name: 运行测试
         shell: bash
         env:
           CGO_ENABLED: "0"
         run: go test ./...
 
-      - name: 运行 Windows 测试
-        if: matrix.goos == 'windows'
-        shell: pwsh
-        env:
-          CGO_ENABLED: "0"
-        run: go test ./...
-
-      - name: 构建 Linux 二进制
-        if: matrix.goos == 'linux'
+      - name: 交叉编译并打包
         shell: bash
-        env:
-          CGO_ENABLED: "0"
-          GOOS: linux
-          GOARCH: amd64
         run: |
+          set -euo pipefail
+
           mkdir -p dist
-          go build \
-            -trimpath \
-            -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
-            -o "dist/${{ matrix.binary_name }}" .
+          zip_tool="${RUNNER_TEMP:-/tmp}/release_zip.go"
+          cat > "${zip_tool}" <<'EOF'
+          package main
 
-      - name: 构建 Windows 二进制
-        if: matrix.goos == 'windows'
-        shell: pwsh
-        env:
-          CGO_ENABLED: "0"
-          GOOS: windows
-          GOARCH: amd64
-        run: |
-          New-Item -ItemType Directory -Force -Path dist | Out-Null
-          $binaryPath = Join-Path "dist" "${{ matrix.binary_name }}"
-          go build -trimpath -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" -o $binaryPath .
+          import (
+            "archive/zip"
+            "io"
+            "os"
+            "path/filepath"
+          )
 
-      - name: 构建 macOS 二进制
-        if: matrix.goos == 'darwin'
-        shell: bash
-        env:
-          CGO_ENABLED: "0"
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-        run: |
-          mkdir -p dist
-          go build \
-            -trimpath \
-            -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
-            -o "dist/${{ matrix.binary_name }}" .
+          func main() {
+            if len(os.Args) != 3 {
+              panic("usage: release_zip <src-file> <dst-zip>")
+            }
 
-      - name: 打包 Linux 产物
-        if: matrix.goos == 'linux'
-        shell: bash
-        run: |
-          archive="sshm_${{ inputs.version }}_linux_amd64.tar.gz"
-          tar -C dist -czf "dist/${archive}" sshm
+            srcPath := os.Args[1]
+            dstPath := os.Args[2]
 
-      - name: 打包 macOS 产物
-        if: matrix.goos == 'darwin'
-        shell: bash
-        run: |
-          archive="sshm_${{ inputs.version }}_darwin_${{ matrix.goarch }}.tar.gz"
-          tar -C dist -czf "dist/${archive}" sshm
+            srcFile, err := os.Open(srcPath)
+            if err != nil {
+              panic(err)
+            }
+            defer srcFile.Close()
 
-      - name: 打包 Windows 产物
-        if: matrix.goos == 'windows'
-        shell: pwsh
-        run: |
-          $archive = "sshm_${{ inputs.version }}_windows_amd64.zip"
-          Compress-Archive -Path dist/sshm.exe -DestinationPath "dist/$archive" -Force
+            srcInfo, err := srcFile.Stat()
+            if err != nil {
+              panic(err)
+            }
 
-      - name: 上传构建产物
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: |
-            dist/*.tar.gz
-            dist/*.zip
+            dstFile, err := os.Create(dstPath)
+            if err != nil {
+              panic(err)
+            }
+            defer dstFile.Close()
 
-  release:
-    name: 发布 GitHub Release
-    runs-on: ubuntu-latest
-    needs: build
+            zipWriter := zip.NewWriter(dstFile)
+            defer zipWriter.Close()
 
-    steps:
-      - name: 拉取代码
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.git_ref }}
+            header, err := zip.FileInfoHeader(srcInfo)
+            if err != nil {
+              panic(err)
+            }
+            header.Name = filepath.Base(srcPath)
+            header.Method = zip.Deflate
 
-      - name: 下载构建产物
-        uses: actions/download-artifact@v4
-        with:
-          path: release-dist
+            writer, err := zipWriter.CreateHeader(header)
+            if err != nil {
+              panic(err)
+            }
 
-      - name: 展示产物列表
-        shell: bash
-        run: find release-dist -type f | sort
+            if _, err := io.Copy(writer, srcFile); err != nil {
+              panic(err)
+            }
+          }
+          EOF
+
+          while read -r goos goarch binary_name archive_ext; do
+            [ -n "${goos}" ] || continue
+
+            target_dir="dist/${goos}-${goarch}"
+            mkdir -p "${target_dir}"
+            binary_path="${target_dir}/${binary_name}"
+
+            echo "==> 构建 ${goos}/${goarch}"
+            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
+              go build \
+                -trimpath \
+                -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
+                -o "${binary_path}" .
+
+            archive_name="sshm_${{ inputs.version }}_${goos}_${goarch}.${archive_ext}"
+            if [ "${archive_ext}" = "zip" ]; then
+              go run "${zip_tool}" "${binary_path}" "dist/${archive_name}"
+            else
+              tar -C "${target_dir}" -czf "dist/${archive_name}" "${binary_name}"
+            fi
+          done <<'EOF'
+          linux amd64 sshm tar.gz
+          darwin amd64 sshm tar.gz
+          darwin arm64 sshm tar.gz
+          windows amd64 sshm.exe zip
+          EOF
+
+          ls -la dist
 
       - name: 创建或更新 Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+
           version='${{ inputs.version }}'
           target_commit="$(git rev-parse HEAD)"
-          shopt -s nullglob globstar
-          files=(release-dist/**/*.tar.gz release-dist/**/*.zip)
+          shopt -s nullglob
+          files=(dist/*.tar.gz dist/*.zip)
+
           if [ "${#files[@]}" -eq 0 ]; then
             echo "未找到可发布的打包文件"
             exit 1
           fi
 
-          if gh release view "$version" >/dev/null 2>&1; then
-            gh release upload "$version" "${files[@]}" --clobber
+          if gh release view "${version}" >/dev/null 2>&1; then
+            gh release upload "${version}" "${files[@]}" --clobber
           else
-            gh release create "$version" "${files[@]}" \
-              --target "$target_commit" \
-              --title "$version" \
+            gh release create "${version}" "${files[@]}" \
+              --target "${target_commit}" \
+              --title "${version}" \
               --generate-notes
           fi

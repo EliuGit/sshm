@@ -1,0 +1,224 @@
+# 背景与参考结论：
+# 1. Forgejo/Codeberg 的 runs-on 不是 GitHub 固定机型名，而是 runner 自己声明的 label；官方文档示例普遍使用 docker。
+# 2. Forgejo 官方建议 workflow 放在 .forgejo/workflows，并推荐为 uses 写全量 URL，例如 https://data.forgejo.org/actions/checkout@v4。
+# 3. Codeberg Hosted Actions 供给有限，继续依赖 windows-latest / ubuntu-latest 这类 GitHub 语义会导致调度失败；因此改为单个 Linux runner 交叉编译。
+# 4. Forgejo 提供与 GitHub Actions 兼容的 github.* 上下文，可直接调用同仓库 Release API 完成创建与附件上传。
+#
+# 关键实现思路：
+# 1. 手动输入版本号与源码 ref，在单个 docker label runner 上执行。
+# 2. 先做一次 Linux 测试，再依次交叉编译 linux/darwin/windows。
+# 3. Linux/macOS 产物打包为 tar.gz，Windows 产物在 Linux runner 上通过内联 Go 程序打包为 zip。
+# 4. 通过 Forgejo API 删除同 tag 的旧 Release、重建 Release、逐个上传附件，避免附件重名冲突。
+#
+# 注意事项、边界条件与潜在风险：
+# 1. 本 workflow 默认 runs-on: docker，前提是仓库可见 runner 确实声明了 docker label；若你的 Codeberg runner label 不同，需要同步修改。
+# 2. 需要在仓库设置里启用 Releases 与 Actions；否则 API 创建 Release 会失败。
+# 3. Forgejo API 路径按官方兼容上下文 github.api_url / github.repository / github.token 组装；删除旧 Release 与上传附件的细节基于 Forgejo/Gitea 通用 Release API 语义实现。
+# 4. 这里的测试仍然只在 Linux 环境执行；跨平台产物只保证可编译，不保证目标系统运行时行为。
+name: codeberg-release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 发布版本号，需包含 v 前缀，例如 v0.1.1
+        required: true
+        type: string
+      git_ref:
+        description: 要构建的分支、tag 或 commit，默认 main
+        required: false
+        default: main
+        type: string
+
+jobs:
+  release:
+    name: 交叉编译并发布 Codeberg Release
+    runs-on: docker
+
+    steps:
+      - name: 拉取代码
+        uses: https://data.forgejo.org/actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: 安装 Go
+        uses: https://data.forgejo.org/actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: 输出环境信息
+        shell: bash
+        run: go version
+
+      - name: 运行测试
+        shell: bash
+        env:
+          CGO_ENABLED: "0"
+        run: go test ./...
+
+      - name: 交叉编译并打包
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          zip_tool="${RUNNER_TEMP:-/tmp}/release_zip.go"
+          cat > "${zip_tool}" <<'EOF'
+          package main
+
+          import (
+            "archive/zip"
+            "io"
+            "os"
+            "path/filepath"
+          )
+
+          func main() {
+            if len(os.Args) != 3 {
+              panic("usage: release_zip <src-file> <dst-zip>")
+            }
+
+            srcPath := os.Args[1]
+            dstPath := os.Args[2]
+
+            srcFile, err := os.Open(srcPath)
+            if err != nil {
+              panic(err)
+            }
+            defer srcFile.Close()
+
+            srcInfo, err := srcFile.Stat()
+            if err != nil {
+              panic(err)
+            }
+
+            dstFile, err := os.Create(dstPath)
+            if err != nil {
+              panic(err)
+            }
+            defer dstFile.Close()
+
+            zipWriter := zip.NewWriter(dstFile)
+            defer zipWriter.Close()
+
+            header, err := zip.FileInfoHeader(srcInfo)
+            if err != nil {
+              panic(err)
+            }
+            header.Name = filepath.Base(srcPath)
+            header.Method = zip.Deflate
+
+            writer, err := zipWriter.CreateHeader(header)
+            if err != nil {
+              panic(err)
+            }
+
+            if _, err := io.Copy(writer, srcFile); err != nil {
+              panic(err)
+            }
+          }
+          EOF
+
+          while read -r goos goarch binary_name archive_ext; do
+            [ -n "${goos}" ] || continue
+
+            target_dir="dist/${goos}-${goarch}"
+            mkdir -p "${target_dir}"
+            binary_path="${target_dir}/${binary_name}"
+
+            echo "==> 构建 ${goos}/${goarch}"
+            GOOS="${goos}" GOARCH="${goarch}" CGO_ENABLED=0 \
+              go build \
+                -trimpath \
+                -ldflags "-X sshm/internal/buildinfo.Version=${{ inputs.version }}" \
+                -o "${binary_path}" .
+
+            archive_name="sshm_${{ inputs.version }}_${goos}_${goarch}.${archive_ext}"
+            if [ "${archive_ext}" = "zip" ]; then
+              go run "${zip_tool}" "${binary_path}" "dist/${archive_name}"
+            else
+              tar -C "${target_dir}" -czf "dist/${archive_name}" "${binary_name}"
+            fi
+          done <<'EOF'
+          linux amd64 sshm tar.gz
+          darwin amd64 sshm tar.gz
+          darwin arm64 sshm tar.gz
+          windows amd64 sshm.exe zip
+          EOF
+
+          ls -la dist
+
+      - name: 创建或更新 Release
+        shell: bash
+        env:
+          FORGEJO_API_URL: ${{ github.api_url }}
+          FORGEJO_REPOSITORY: ${{ github.repository }}
+          FORGEJO_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          version='${{ inputs.version }}'
+          target_commit="$(git rev-parse HEAD)"
+          api_base="${FORGEJO_API_URL}/repos/${FORGEJO_REPOSITORY}/releases"
+          auth_header="Authorization: token ${FORGEJO_TOKEN}"
+          shopt -s nullglob
+          files=(dist/*.tar.gz dist/*.zip)
+
+          if [ "${#files[@]}" -eq 0 ]; then
+            echo "未找到可发布的打包文件"
+            exit 1
+          fi
+
+          existing_release="$(
+            curl -fsS \
+              -H "${auth_header}" \
+              "${api_base}/tags/${version}" \
+              2>/dev/null || true
+          )"
+
+          if [ -n "${existing_release}" ]; then
+            existing_id="$(printf '%s' "${existing_release}" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+            if [ -n "${existing_id}" ]; then
+              curl -fsS \
+                -X DELETE \
+                -H "${auth_header}" \
+                "${api_base}/${existing_id}" \
+                >/dev/null
+            fi
+          fi
+
+          release_payload="$(cat <<EOF
+          {
+            "tag_name": "${version}",
+            "target_commitish": "${target_commit}",
+            "name": "${version}",
+            "body": "自动发布版本 ${version}，构建来源 ${target_commit}。"
+          }
+          EOF
+          )"
+
+          create_response="$(
+            curl -fsS \
+              -X POST \
+              -H "${auth_header}" \
+              -H "Content-Type: application/json" \
+              -d "${release_payload}" \
+              "${api_base}"
+          )"
+
+          release_id="$(printf '%s' "${create_response}" | sed -n 's/.*"id":\([0-9][0-9]*\).*/\1/p' | head -n 1)"
+          if [ -z "${release_id}" ]; then
+            echo "未能从 Forgejo API 响应中解析 release id"
+            exit 1
+          fi
+
+          for file in "${files[@]}"; do
+            filename="$(basename "${file}")"
+            curl -fsS \
+              -X POST \
+              -H "${auth_header}" \
+              -F "attachment=@${file}" \
+              "${api_base}/${release_id}/assets?name=${filename}" \
+              >/dev/null
+          done
