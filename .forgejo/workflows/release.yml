@@ -33,7 +33,7 @@ on:
 jobs:
   release:
     name: 交叉编译并发布 Codeberg Release
-    runs-on: docker
+    runs-on: codeberg-small
 
     steps:
       - name: 拉取代码
