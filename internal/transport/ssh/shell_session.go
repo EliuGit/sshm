@@ -227,7 +227,14 @@ func openShellOnClient(client *gossh.Client) (bool, error) {
 		return false, fmt.Errorf("failed to request PTY: %w", err)
 	}
 
-	session.Stdin = os.Stdin
+	sessionStdin, err := session.StdinPipe()
+	if err != nil {
+		return false, fmt.Errorf("failed to create session stdin pipe: %w", err)
+	}
+	inputForwarder, err := newInteractiveInputForwarder(os.Stdin, sessionStdin)
+	if err != nil {
+		return false, err
+	}
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
 
@@ -237,14 +244,21 @@ func openShellOnClient(client *gossh.Client) (bool, error) {
 	defer stopResize()
 
 	if err := session.Shell(); err != nil {
+		_ = inputForwarder.Stop()
 		return false, fmt.Errorf("failed to start shell: %w", err)
 	}
+	inputForwarder.Start()
 
-	if err := session.Wait(); err != nil {
-		if exitErr, ok := err.(*gossh.ExitError); ok && exitErr.ExitStatus() == 0 {
-			return true, nil
+	waitErr := session.Wait()
+	stopErr := inputForwarder.Stop()
+	if waitErr != nil {
+		if exitErr, ok := waitErr.(*gossh.ExitError); ok && exitErr.ExitStatus() == 0 {
+			return true, stopErr
 		}
-		return true, err
+		return true, errors.Join(waitErr, stopErr)
+	}
+	if stopErr != nil {
+		return true, stopErr
 	}
 	return true, nil
 }
