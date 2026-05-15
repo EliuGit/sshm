@@ -52,3 +52,11 @@ func TestRenderShortcutCellKeepsKeyAndTruncatesLabel(t *testing.T) {
 		t.Fatalf("width = %d, want <= 12: %q", lipgloss.Width(got), got)
 	}
 }
+
+func TestShellMiddlePanelHeightFitsSixConnectionRows(t *testing.T) {
+	t.Parallel()
+
+	if shellMiddlePanelHeight != 18 {
+		t.Fatalf("shellMiddlePanelHeight = %d, want 18", shellMiddlePanelHeight)
+	}
+}

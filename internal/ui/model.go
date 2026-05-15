@@ -154,8 +154,14 @@ func (m *Model) Init() tea.Cmd {
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
+		// tmux 分屏里首帧有机会先按默认尺寸渲染，再收到真实 pane 尺寸。
+		// 这里在首次拿到窗口大小后主动清一次屏，避免默认尺寸那一帧的边框残影留在相邻 pane。
+		firstResize := m.width == 0 || m.height == 0
 		m.width = msg.Width
 		m.height = msg.Height
+		if firstResize {
+			return m, tea.ClearScreen
+		}
 	case connectionsLoadedMsg:
 		if msg.err != nil {
 			m.setErrorStatus(msg.err)
@@ -326,5 +332,9 @@ func isBrowserSessionError(err error) bool {
 }
 
 func (m *Model) View() string {
+	// 在拿到真实窗口尺寸前先不渲染主体，避免 tmux 分屏下先输出默认宽高的首帧。
+	if m.width == 0 || m.height == 0 {
+		return ""
+	}
 	return m.currentScreen().view(m)
 }

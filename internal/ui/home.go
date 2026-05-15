@@ -110,13 +110,12 @@ func (m *Model) viewHome() string {
 		height = 34
 	}
 	contentWidth := max(36, width-4)
-	contentHeight := max(16, height-2)
 	mainWidth, listWidth, detailWidth := m.homePanelWidths(contentWidth)
 	header := m.viewHomeHeader()
 	search := m.viewHomeSearch(mainWidth)
 	status := m.renderStatus()
 	footer := m.viewHomeFooter(mainWidth)
-	bodyHeight := max(8, contentHeight-lipgloss.Height(header)-lipgloss.Height(search)-lipgloss.Height(status)-lipgloss.Height(footer))
+	bodyHeight := shellMiddlePanelHeight
 	body := strings.Join([]string{
 		search,
 		m.viewHomeBody(listWidth, detailWidth, bodyHeight),
@@ -124,12 +123,12 @@ func (m *Model) viewHome() string {
 	return m.renderShell(shellView{
 		style:   m.styles.App,
 		width:   contentWidth,
-		height:  contentHeight,
+		height:  height,
 		header:  header,
 		body:    body,
 		status:  status,
 		footer:  footer,
-		overlay: m.homeOverlayView(contentWidth, contentHeight),
+		overlay: m.homeOverlayView(contentWidth, height),
 	})
 }
 
@@ -478,10 +477,8 @@ func (m *Model) viewConnectionDetail(width int, height int) string {
 	lines = append(lines,
 		m.detailLine("home.detail_auth", m.authTypeLabel(conn.AuthType), width),
 		m.detailLine("home.detail_group", defaultString(m.connectionGroupLabel(*conn), m.translator.T("group.ungrouped")), width),
-		m.detailLine("form.host", conn.Host, width),
-		m.detailLine("form.port", fmt.Sprintf("%d", conn.Port), width),
+		m.detailLine("home.detail_host_port", fmt.Sprintf("%s:%d", conn.Host, conn.Port), width),
 		m.detailLine("form.username", conn.Username, width),
-		m.detailLine("home.table_address", hostInfo, width),
 		m.detailLine("home.table_last_used", lastUsed, width),
 	)
 	if conn.AuthType == domain.AuthTypePrivateKey {

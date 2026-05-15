@@ -77,6 +77,10 @@ func (m *Model) updateImport(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) viewImport() string {
 	styles := m.styles
+	viewportHeight := m.height
+	if viewportHeight == 0 {
+		viewportHeight = 34
+	}
 	title := styles.PageTitle.Render(m.translator.T("import.title"))
 	if m.imports.step == importStepPath {
 		lines := []string{
@@ -96,9 +100,15 @@ func (m *Model) viewImport() string {
 		if m.imports.errorText != "" {
 			lines = append(lines, "", styles.ErrorText.Render(m.imports.errorText))
 		}
-		return styles.Panel.Width(76).Render(strings.Join(lines, "\n"))
+		return renderSizedBlock(styles.Panel, 76, 0, strings.Join(lines, "\n"))
 	}
 
+	footer := localizedShortcutHelpWidth(m.translator, m.styles, 72,
+		"j/k", "import.shortcut_move",
+		"space", "import.shortcut_action",
+		"enter/c-s", "import.shortcut_import",
+		"esc", "import.shortcut_back",
+	)
 	lines := []string{
 		title,
 		styles.SubtleText.Render(m.translator.T("import.preview_subtitle")),
@@ -107,7 +117,18 @@ func (m *Model) viewImport() string {
 	if len(m.imports.items) == 0 {
 		lines = append(lines, styles.SubtleText.Render(m.translator.T("import.empty")))
 	} else {
-		visible := 12
+		warningHeight := 0
+		if len(m.imports.warnings) > 0 {
+			warningHeight = 2
+		}
+		errorHeight := 0
+		if m.imports.errorText != "" {
+			errorHeight = 2
+		}
+		// 每个导入候选占两行，这里只保留固定上限；
+		// 终端变矮时再按剩余行数自动收缩，避免列表把页面撑出可视区。
+		availableRows := max(1, (viewportHeight-warningHeight-errorHeight-10)/2)
+		visible := min(importPreviewMaxRows, availableRows)
 		start := 0
 		if m.imports.selected >= visible {
 			start = m.imports.selected - visible + 1
@@ -123,13 +144,8 @@ func (m *Model) viewImport() string {
 	if m.imports.errorText != "" {
 		lines = append(lines, "", styles.ErrorText.Render(m.imports.errorText))
 	}
-	lines = append(lines, "", localizedShortcutHelpWidth(m.translator, m.styles, 72,
-		"j/k", "import.shortcut_move",
-		"space", "import.shortcut_action",
-		"enter/c-s", "import.shortcut_import",
-		"esc", "import.shortcut_back",
-	))
-	return styles.Panel.Width(80).Render(strings.Join(lines, "\n"))
+	lines = append(lines, "", footer)
+	return renderSizedBlock(styles.Panel, 80, 0, strings.Join(lines, "\n"))
 }
 
 func (m *Model) renderImportRow(item domain.ImportCandidate, selected bool, width int) string {

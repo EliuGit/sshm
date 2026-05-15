@@ -145,28 +145,24 @@ func (m *Model) viewBrowser() string {
 		viewportHeight = 34
 	}
 	contentWidth := max(40, viewportWidth-4)
-	contentHeight := max(16, viewportHeight-2)
 	panelWidth := max(18, (contentWidth-2)/2)
 	browserWidth := panelWidth*2 + 2
 	header := m.viewBrowserHeader(browserWidth)
 	status := m.renderStatusBar(browserWidth)
 	footer := m.renderBrowserFooter(browserWidth)
-	headerHeight := lipgloss.Height(header)
-	statusHeight := lipgloss.Height(status)
-	footerHeight := lipgloss.Height(footer)
-	panelHeight := max(8, contentHeight-headerHeight-statusHeight-footerHeight)
+	panelHeight := shellMiddlePanelHeight
 	leftPanel := m.renderBrowserPanel(m.browser.localPanel, panelWidth, panelHeight, m.browser.activePanel == domain.LocalPanel)
 	rightPanel := m.renderBrowserPanel(m.browser.remotePanel, panelWidth, panelHeight, m.browser.activePanel == domain.RemotePanel)
 	body := lipgloss.JoinHorizontal(lipgloss.Top, leftPanel, "  ", rightPanel)
 	return m.renderShell(shellView{
 		style:   styles.App,
 		width:   contentWidth,
-		height:  contentHeight,
+		height:  viewportHeight,
 		header:  header,
 		body:    body,
 		status:  status,
 		footer:  footer,
-		overlay: m.browserOverlayView(contentWidth, contentHeight),
+		overlay: m.browserOverlayView(contentWidth, viewportHeight),
 	})
 }
 

@@ -483,6 +483,39 @@ func TestHomeViewFitsViewportWidth(t *testing.T) {
 	}
 }
 
+func TestViewWaitsForInitialWindowSize(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+
+	if got := model.View(); got != "" {
+		t.Fatalf("View() = %q, want empty before first WindowSizeMsg", got)
+	}
+}
+
+func TestFirstWindowSizeMsgClearsScreen(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+
+	updated, cmd := model.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	got := updated.(*Model)
+	if got.width != 80 || got.height != 24 {
+		t.Fatalf("size = %dx%d, want 80x24", got.width, got.height)
+	}
+	if cmd == nil {
+		t.Fatal("cmd = nil, want clear screen on first resize")
+	}
+}
+
 func TestHomeShortcutsUseLowercaseKeys(t *testing.T) {
 	t.Parallel()
 
@@ -972,6 +1005,63 @@ func TestImportFurtherEditClearsErrorText(t *testing.T) {
 	got := updated.(*Model)
 	if got.imports.errorText != "" {
 		t.Fatalf("errorText = %q, want cleared after edit", got.imports.errorText)
+	}
+}
+
+func TestImportPreviewCapsVisibleRows(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.page = pageImport
+	model.height = 24
+	model.imports.step = importStepPreview
+	model.imports.items = make([]domain.ImportCandidate, 0, 20)
+	for index := 0; index < 20; index++ {
+		model.imports.items = append(model.imports.items, domain.ImportCandidate{
+			Connection: domain.ConnectionInput{
+				Name:     fmt.Sprintf("host-%02d", index),
+				Host:     "10.0.0.1",
+				Port:     22,
+				Username: "root",
+			},
+			Action: domain.ImportActionCreate,
+		})
+	}
+
+	view := model.viewImport()
+	if strings.Contains(view, "host-05") {
+		t.Fatalf("import view = %q, want visible rows capped before host-05", view)
+	}
+	if !strings.Contains(view, "host-04") {
+		t.Fatalf("import view = %q, want last visible row host-04", view)
+	}
+}
+
+func TestHomeDetailCombinesHostAndPort(t *testing.T) {
+	t.Parallel()
+
+	translator, err := i18n.New("zh-CN")
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	model := NewModel(nil, translator, "", "~/.ssh/id_rsa")
+	model.home.connections = []Connection{{
+		Name:     "prod",
+		Username: "root",
+		Host:     "172.168.1.17",
+		Port:     22,
+	}}
+
+	detail := model.viewConnectionDetail(40, 18)
+	if strings.Contains(detail, translator.T("home.table_address")) {
+		t.Fatalf("detail = %q, want no address row", detail)
+	}
+	if !strings.Contains(detail, translator.T("home.detail_host_port")) || !strings.Contains(detail, "172.168.1.17:22") {
+		t.Fatalf("detail = %q, want combined host/port row", detail)
 	}
 }
 

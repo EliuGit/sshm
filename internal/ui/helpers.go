@@ -104,6 +104,15 @@ func max(a int, b int) int {
 	return b
 }
 
+const (
+	// 主界面连接列表每个连接占两行，列表标题本身占两行。
+	// 结合面板自身的 border 和 padding 后，外层固定为 20 行时，
+	// 正文区正好稳定显示 6 组 SSH 连接信息。
+	shellMiddlePanelHeight = 20
+	// 导入预览按行数截断，避免 ssh_config 很长时把页面继续撑高。
+	importPreviewMaxRows = 5
+)
+
 func min(a int, b int) int {
 	if a < b {
 		return a
