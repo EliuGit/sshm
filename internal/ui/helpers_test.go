@@ -56,7 +56,7 @@ func TestRenderShortcutCellKeepsKeyAndTruncatesLabel(t *testing.T) {
 func TestShellMiddlePanelHeightFitsSixConnectionRows(t *testing.T) {
 	t.Parallel()
 
-	if shellMiddlePanelHeight != 18 {
-		t.Fatalf("shellMiddlePanelHeight = %d, want 18", shellMiddlePanelHeight)
+	if shellMiddlePanelHeight != 20 {
+		t.Fatalf("shellMiddlePanelHeight = %d, want 20", shellMiddlePanelHeight)
 	}
 }
