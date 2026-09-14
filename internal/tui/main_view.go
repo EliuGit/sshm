@@ -8,15 +8,19 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+
+	"sshm/internal/buildinfo"
 )
 
 const (
-	windowTitle     = "SSHM v1.0"
+	appName         = "SSHM"
 	minWidth        = 80
 	minHeight       = 20
 	nameColumnWidth = 24
 	userColumnWidth = 16
 )
+
+var windowTitle = appName + " " + buildinfo.Version
 
 var (
 	backgroundColor = lipgloss.Color("#282C34")
