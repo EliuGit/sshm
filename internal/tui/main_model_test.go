@@ -19,7 +19,7 @@ var testConnections = []connectionRow{
 
 func TestRenderPanelSizeAndSections(t *testing.T) {
 	const width, height = 100, 30
-	panel := renderPanel(width, height)
+	panel := renderPanelWithConnections(width, height, 0, false, newSearchInput(), nil, 0, true)
 	lines := strings.Split(panel, "\n")
 	if len(lines) != height {
 		t.Fatalf("行数 = %d, want %d", len(lines), height)
@@ -122,7 +122,7 @@ func TestSearchTextInputAndBackspace(t *testing.T) {
 	}
 	input := newSearchInput()
 	input.SetValue("dev")
-	if !strings.Contains(ansi.Strip(renderPanelWithInput(100, 30, 0, true, input)), "dev") {
+	if !strings.Contains(ansi.Strip(renderPanelWithConnections(100, 30, 0, true, input, nil, 0, true)), "dev") {
 		t.Fatal("搜索文本未渲染")
 	}
 }

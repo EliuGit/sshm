@@ -13,14 +13,13 @@ import (
 )
 
 const (
-	appName         = "SSHM"
 	minWidth        = 80
 	minHeight       = 20
 	nameColumnWidth = 24
 	userColumnWidth = 16
 )
 
-var windowTitle = appName + " " + buildinfo.Version
+var windowTitle = "SSHM " + buildinfo.Version
 
 var (
 	backgroundColor = lipgloss.Color("#282C34")
@@ -75,15 +74,6 @@ func (m model) render() string {
 		return placeModal(base, m.modal.View(), m.width, m.height)
 	}
 	return base
-}
-
-// renderPanel 按终端单元格宽度绘制主界面，避免中文和宽字符造成分栏错位。
-func renderPanel(width, height int) string {
-	return renderPanelWithInput(width, height, 0, false, newSearchInput())
-}
-
-func renderPanelWithInput(width, height, selected int, searchFocused bool, searchInput textinput.Model) string {
-	return renderPanelWithConnections(width, height, selected, searchFocused, searchInput, nil, 0, true)
 }
 
 // renderPanelWithConnections 绘制连接列表及详情，并使用已过滤、排序后的数据保持两侧选中项一致。

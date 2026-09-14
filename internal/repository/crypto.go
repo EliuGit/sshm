@@ -74,9 +74,7 @@ func sealDataKey(password, dataKey []byte) ([]byte, []byte, []byte, error) {
 	return salt, nonce, aead.Seal(nil, nonce, dataKey, nil), nil
 }
 
-func sealStore(db interface {
-	Exec(string, ...any) (sql.Result, error)
-}, password []byte) ([]byte, error) {
+func sealStore(db *sql.Tx, password []byte) ([]byte, error) {
 	dataKey := make([]byte, keySize)
 	if _, err := rand.Read(dataKey); err != nil {
 		return nil, err
