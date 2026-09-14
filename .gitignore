@@ -1,18 +1,24 @@
+# 本地代码索引
+.codegraph/
+
+# SQLite 数据及运行时文件
 *.db
-*.log
-*.sqlite
-*.sqlite3
-*.sql
-*.db3
-*.db2
-*.db1
-*.db
-*.dbf
-*.mdb
-*.accdb
-*.ldb
-*.ldb
-*.pdb
-*.p
-.gocache
-AGENTS.md
+*.db-shm
+*.db-wal
+
+# Go 构建与测试产物
+*.exe
+*.test
+*.out
+/sshm
+
+# 本地环境变量
+.env
+.env.*
+!.env.example
+
+# 编辑器与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
