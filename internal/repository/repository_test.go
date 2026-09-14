@@ -161,7 +161,7 @@ func TestCreateCredentialAndReuseItForConnections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if connection.ID == 0 || connection.Credential != "passwd" {
+	if connection.ID == 0 || connection.Credential != "passwd" || connection.CredentialID != credential.ID {
 		t.Fatalf("创建结果 = %#v", connection)
 	}
 	var nonce, ciphertext []byte

@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"path"
+	"path/filepath"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -34,8 +36,7 @@ const (
 // transferOverlay 保存删除、重命名或传输进度覆盖层的状态。
 type transferOverlay struct {
 	kind            overlayKind
-	deleteCount     int
-	deleteName      string
+	deletePaths     []string
 	progress        progressState
 	operation       string
 	item            string
@@ -50,16 +51,20 @@ type transferOverlay struct {
 }
 
 func (m *transferModel) openDelete() {
-	if len(m.selected) > 0 {
-		m.overlay = transferOverlay{kind: overlayDelete, deleteCount: len(m.selected)}
-		return
-	}
-	entry, ok := m.currentEntry()
-	if !ok {
+	entries := m.operationEntries()
+	if len(entries) == 0 {
 		m.status = "没有可删除的项目"
 		return
 	}
-	m.overlay = transferOverlay{kind: overlayDelete, deleteName: entry.name}
+	paths := make([]string, len(entries))
+	for i, entry := range entries {
+		if m.location == remoteSide {
+			paths[i] = path.Join(m.remotePath, entry.name)
+		} else {
+			paths[i] = filepath.Join(m.localPath, entry.name)
+		}
+	}
+	m.overlay = transferOverlay{kind: overlayDelete, deletePaths: paths}
 }
 
 func (m *transferModel) openRename() tea.Cmd {
@@ -177,10 +182,7 @@ func (m transferModel) handleOverlay(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 func (m transferModel) renderOverlay() string {
 	switch m.overlay.kind {
 	case overlayDelete:
-		body := fmt.Sprintf("确认删除“%s”？", m.overlay.deleteName)
-		if m.overlay.deleteCount > 0 {
-			body = fmt.Sprintf("确认删除选中的 %d 项？", m.overlay.deleteCount)
-		}
+		body := strings.Join(append([]string{"确定要删除以下项目："}, m.overlay.deletePaths...), "\n")
 		return formDialog("删除文件", body, "y 确认 | n/Esc 取消", confirmStyle, modalTitleStyle)
 	case overlayProgress:
 		return m.renderProgress()
@@ -210,8 +212,8 @@ func (m transferModel) renderOverlay() string {
 			item("h/Backspace", "返回上级") + separator + item("l/Enter", "进入目录"),
 			item("Space", "多选") + separator + item("y/p", "复制/粘贴"),
 			item("/", "筛选") + separator + item("Ctrl+G", "跳转"),
-			item("n/s/d", "按名称/大小/时间排序"),
-			item("Ctrl+D", "删除") + separator + item("r", "重命名"),
+			item("n/s/t", "按名称/大小/时间排序"),
+			item("d", "删除") + separator + item("r", "重命名"),
 			item("a", "新建文件夹"),
 			item("Ctrl+C", "清空/取消") + separator + item("q/Esc", "关闭/返回"),
 		}, "\n")

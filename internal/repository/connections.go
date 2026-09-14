@@ -160,5 +160,5 @@ func (s *Store) CreateConnection(input NewConnection) (Connection, error) {
 	if err := tx.Commit(); err != nil {
 		return Connection{}, err
 	}
-	return Connection{ID: id, Name: input.Name, Host: input.Host, Port: input.Port, Username: input.Username, Credential: credentialType, CredentialName: credentialName, Remark: input.Remark}, nil
+	return Connection{ID: id, Name: input.Name, Host: input.Host, Port: input.Port, Username: input.Username, Credential: credentialType, CredentialID: input.CredentialID, CredentialName: credentialName, Remark: input.Remark}, nil
 }

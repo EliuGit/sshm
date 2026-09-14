@@ -207,9 +207,9 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		} else {
 			return m.startPaste()
 		}
-	case "n", "s", "d":
+	case "n", "s", "t":
 		m.toggleSort(key.String()[0])
-	case "ctrl+d":
+	case "d":
 		m.openDelete()
 	case "r":
 		if m.location == remoteSide && m.sftp == nil {
@@ -265,12 +265,16 @@ func (m transferModel) updateAddress(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 
 func (m transferModel) updateSearch(key tea.KeyPressMsg) (modalModel, tea.Cmd) {
 	switch key.String() {
-	case "ctrl+c":
+	case "ctrl+c", "esc":
 		m.search.Reset()
 		m.cursor = 0
 		clear(m.selected)
+		if key.String() == "esc" {
+			m.search.Blur()
+			m.focus = listFocus
+		}
 		return m, nil
-	case "esc", "enter":
+	case "enter":
 		m.search.Blur()
 		m.focus = listFocus
 		return m, nil
@@ -366,18 +370,10 @@ func (m *transferModel) copySelection() {
 		m.status = "远程连接不可用"
 		return
 	}
-	entries := m.currentEntries()
-	chosen := make([]transferEntry, 0, len(m.selected))
-	for _, entry := range entries {
-		if _, ok := m.selected[entry.name]; ok {
-			chosen = append(chosen, entry)
-		}
-	}
-	if len(chosen) == 0 {
-		if entry, ok := m.currentEntry(); ok {
-			chosen = append(chosen, entry)
-			m.selected[entry.name] = struct{}{}
-		}
+	hadSelection := len(m.selected) > 0
+	chosen := m.operationEntries()
+	if !hadSelection && len(chosen) > 0 {
+		m.selected[chosen[0].name] = struct{}{}
 	}
 	for _, entry := range chosen {
 		if entry.symlink {
@@ -492,7 +488,7 @@ func (m transferModel) visibleEntries() []transferEntry {
 		switch m.sortField {
 		case 's':
 			comparison = cmp.Compare(left.size, right.size)
-		case 'd':
+		case 't':
 			comparison = strings.Compare(left.modified, right.modified)
 		default:
 			comparison = strings.Compare(strings.ToLower(left.name), strings.ToLower(right.name))

@@ -165,7 +165,7 @@ func (m transferModel) renderDetails(width, height int) []string {
 }
 
 func (m transferModel) sortLabel() string {
-	name := map[byte]string{'n': "文件名", 's': "大小", 'd': "修改时间"}[m.sortField]
+	name := map[byte]string{'n': "文件名", 's': "大小", 't': "修改时间"}[m.sortField]
 	arrow := "↑"
 	if !m.sortAsc {
 		arrow = "↓"

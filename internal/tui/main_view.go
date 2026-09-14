@@ -115,7 +115,7 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 	connectionTable := newConnectionTable(leftWidth, visibleRows+1, tableSelected, !searchFocused, tableConnections, sortField, sortAsc)
 	tableLines := strings.Split(connectionTable.View(), "\n")
 	leftRows[mainStart] = tableLines[0]
-	rightRows[mainStart] = labelStyle.Render("Details")
+	rightRows[mainStart] = labelStyle.Render("详情")
 	lineStyle := borderStyle
 	if !searchFocused {
 		lineStyle = accentStyle
@@ -178,9 +178,9 @@ func newConnectionTable(width, height, selected int, focused bool, connections [
 	}
 	t := table.New(
 		table.WithColumns([]table.Column{
-			{Title: sortTitle(" Name", 'n', sortField, sortAsc), Width: nameColumnWidth},
-			{Title: sortTitle("Host:Port", 'h', sortField, sortAsc), Width: width - nameColumnWidth - userColumnWidth},
-			{Title: sortTitle("User", 'u', sortField, sortAsc), Width: userColumnWidth},
+			{Title: sortTitle(" 名称", 'n', sortField, sortAsc), Width: nameColumnWidth},
+			{Title: sortTitle("主机:端口", 'h', sortField, sortAsc), Width: width - nameColumnWidth - userColumnWidth},
+			{Title: sortTitle("用户", 'u', sortField, sortAsc), Width: userColumnWidth},
 		}),
 		table.WithRows(rows),
 		table.WithWidth(width),

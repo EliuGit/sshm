@@ -256,7 +256,7 @@ func TestFileTransferSelectionAddressAndPasteDirection(t *testing.T) {
 
 func TestFileTransferSortKeepsDirectoriesFirst(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
-	for _, field := range []byte{'n', 's', 'd'} {
+	for _, field := range []byte{'n', 's', 't'} {
 		m.sortField = field
 		for _, asc := range []bool{true, false} {
 			m.sortAsc = asc
@@ -371,6 +371,40 @@ func TestFileTransferClipboardSelectsCurrentEntryByDefault(t *testing.T) {
 	}
 }
 
+func TestFileTransferOperationsUseBatchOnlyWhenFocusIsSelected(t *testing.T) {
+	m := newTestTransfer(t, connectionRow{})
+	m.selected["projects"] = struct{}{}
+	m.copySelection()
+	if len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "downloads" || len(m.selected) != 0 {
+		t.Fatalf("复制未回退到焦点项: clipboard=%v selected=%v", m.clipboard.entries, m.selected)
+	}
+
+	m = newTestTransfer(t, connectionRow{})
+	m.selected["downloads"] = struct{}{}
+	m.selected["projects"] = struct{}{}
+	m.focusEntry("projects")
+	m.copySelection()
+	if len(m.clipboard.entries) != 2 || len(m.selected) != 2 {
+		t.Fatalf("焦点位于选择项时未批量复制: clipboard=%v selected=%v", m.clipboard.entries, m.selected)
+	}
+
+	m = newTestTransfer(t, connectionRow{})
+	m.selected["projects"] = struct{}{}
+	m.openDelete()
+	if len(m.overlay.deletePaths) != 1 || m.overlay.deletePaths[0] != filepath.Join(m.localPath, "downloads") || len(m.selected) != 0 {
+		t.Fatalf("删除未回退到焦点项: overlay=%#v selected=%v", m.overlay, m.selected)
+	}
+
+	m = newTestTransfer(t, connectionRow{})
+	m.selected["downloads"] = struct{}{}
+	m.selected["projects"] = struct{}{}
+	m.focusEntry("projects")
+	m.openDelete()
+	if len(m.overlay.deletePaths) != 2 || len(m.selected) != 2 {
+		t.Fatalf("焦点位于选择项时未批量删除: overlay=%#v selected=%v", m.overlay, m.selected)
+	}
+}
+
 func TestFileTransferCutShortcutIsUnavailable(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
@@ -388,7 +422,7 @@ func TestFileTransferHelpListsAllShortcuts(t *testing.T) {
 		t.Fatalf("? 未打开帮助弹窗: overlay=%d cmd=%v", m.overlay.kind, cmd)
 	}
 	view := ansi.Strip(m.View())
-	for _, shortcut := range []string{"1/2", "↑/↓、j/k", "h/Backspace", "l/Enter", "Space", "y/p", "/ 筛选", "Ctrl+G", "n/s/d", "Ctrl+D", "r 重命名", "a 新建文件夹", "Ctrl+C", "Esc"} {
+	for _, shortcut := range []string{"1/2", "↑/↓、j/k", "h/Backspace", "l/Enter", "Space", "y/p", "/ 筛选", "Ctrl+G", "n/s/t", "d 删除", "r 重命名", "a 新建文件夹", "Ctrl+C", "Esc"} {
 		if !strings.Contains(view, shortcut) {
 			t.Fatalf("帮助弹窗缺少 %q: %q", shortcut, view)
 		}
@@ -403,15 +437,31 @@ func TestFileTransferHelpListsAllShortcuts(t *testing.T) {
 	}
 }
 
+func TestFileTransferShortcutMapping(t *testing.T) {
+	m := newTestTransfer(t, connectionRow{})
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Text: "d"}))
+	m = updated.(transferModel)
+	if cmd != nil || m.overlay.kind != overlayDelete {
+		t.Fatalf("d 未打开删除确认框: overlay=%d cmd=%v", m.overlay.kind, cmd)
+	}
+
+	m = newTestTransfer(t, connectionRow{})
+	updated, cmd = m.Update(tea.KeyPressMsg(tea.Key{Text: "t"}))
+	m = updated.(transferModel)
+	if cmd != nil || m.sortField != 't' {
+		t.Fatalf("t 未切换到时间排序: sortField=%q cmd=%v", m.sortField, cmd)
+	}
+}
+
 func TestFileTransferDeleteOverlayIsolatesInputAndRestoresState(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	m.selected["downloads"] = struct{}{}
 	m.selected["projects"] = struct{}{}
 
-	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "d"}))
 	m = updated.(transferModel)
-	if m.overlay.kind != overlayDelete || !strings.Contains(ansi.Strip(m.View()), "确认删除选中的 2 项？") {
-		t.Fatalf("Ctrl+D 未打开多选删除确认框: %#v", m.overlay)
+	if m.overlay.kind != overlayDelete || !strings.Contains(ansi.Strip(m.View()), "确定要删除以下项目：") || len(m.overlay.deletePaths) != 2 {
+		t.Fatalf("d 未打开多选删除确认框: %#v", m.overlay)
 	}
 
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyDown}))
@@ -434,7 +484,8 @@ func TestFileTransferDeleteOverlayIsolatesInputAndRestoresState(t *testing.T) {
 func TestFileTransferDeleteOverlayRunsLocalTask(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	deletedPath := filepath.Join(m.localPath, "downloads")
-	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
+	m.clipboard = transferClipboard{source: localSide, path: m.localPath, entries: []transferEntry{{name: "downloads", dir: true}}}
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Text: "d"}))
 	m = updated.(transferModel)
 	if !strings.Contains(ansi.Strip(m.View()), "downloads") {
 		t.Fatal("单项删除确认框未显示当前名称")
@@ -445,8 +496,17 @@ func TestFileTransferDeleteOverlayRunsLocalTask(t *testing.T) {
 		t.Fatal("确认删除未启动后台任务")
 	}
 	m = finishTransferTask(t, m, cmd)
-	if _, err := os.Stat(deletedPath); !os.IsNotExist(err) || m.overlay.kind != overlayNone {
-		t.Fatalf("删除完成后弹窗未自动关闭: stat=%v overlay=%d", err, m.overlay.kind)
+	if _, err := os.Stat(deletedPath); !os.IsNotExist(err) || m.overlay.kind != overlayNone || len(m.clipboard.entries) != 0 {
+		t.Fatalf("删除完成后状态错误: stat=%v overlay=%d clipboard=%v", err, m.overlay.kind, m.clipboard)
+	}
+}
+
+func TestFileTransferDeleteKeepsClipboardFromOtherPath(t *testing.T) {
+	m := newTestTransfer(t, connectionRow{})
+	m.clipboard = transferClipboard{source: localSide, path: filepath.Join(m.localPath, "other"), entries: []transferEntry{{name: "item"}}}
+	updated, cmd := m.startDelete()
+	if cmd == nil || updated.(transferModel).task.clearClipboard {
+		t.Fatalf("删除其他路径时错误标记清空剪贴板: model=%#v", updated)
 	}
 }
 
@@ -649,6 +709,21 @@ func TestFileTransferListFocusClearsFilter(t *testing.T) {
 	}
 }
 
+func TestFileTransferSearchEscClearsAndBlurs(t *testing.T) {
+	m := newTestTransfer(t, connectionRow{})
+	m.focus = searchFocus
+	m.search.Focus()
+	m.search.SetValue("readme")
+	m.cursor = 1
+	m.selected["README.md"] = struct{}{}
+
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	m = updated.(transferModel)
+	if cmd != nil || m.search.Value() != "" || m.search.Focused() || m.focus != listFocus || m.cursor != 0 || len(m.selected) != 0 {
+		t.Fatalf("筛选焦点下 Esc 状态错误: focus=%d value=%q focused=%v cursor=%d selected=%v cmd=%v", m.focus, m.search.Value(), m.search.Focused(), m.cursor, m.selected, cmd)
+	}
+}
+
 func TestFileTransferEscClosesEvenWithFilter(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	m.search.SetValue("readme")
@@ -750,9 +825,9 @@ func TestRenameAfterPasteKeepsClipboardSeparateFromDeleteSelection(t *testing.T)
 	if !ok || entry.name != "temp_2" || len(m.selected) != 0 || len(m.clipboard.entries) != 0 {
 		t.Fatalf("重命名后状态冲突: entry=%#v selected=%v clipboard=%v", entry, m.selected, m.clipboard.entries)
 	}
-	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'd', Mod: tea.ModCtrl}))
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "d"}))
 	m = updated.(transferModel)
-	if m.overlay.deleteCount != 0 || m.overlay.deleteName != "temp_2" {
+	if len(m.overlay.deletePaths) != 1 || m.overlay.deletePaths[0] != filepath.Join(m.localPath, "temp_2") {
 		t.Fatalf("删除错误选择了剪贴板来源项: %#v", m.overlay)
 	}
 }

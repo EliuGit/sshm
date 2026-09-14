@@ -29,7 +29,7 @@ func TestRenderPanelSizeAndSections(t *testing.T) {
 			t.Fatalf("第 %d 行宽度 = %d, want %d", i+1, got, width)
 		}
 	}
-	for _, text := range []string{"SSHM", "搜索名称、主机、用户、备注...", "Name", "Host:Port", "Details", "Enter/l: 菜单", "a: 新增", "p: 凭据管理"} {
+	for _, text := range []string{"SSHM", "搜索名称、主机、用户、备注...", "名称", "主机:端口", "详情", "Enter/l: 菜单", "a: 新增", "p: 凭据管理"} {
 		if !strings.Contains(ansi.Strip(panel), text) {
 			t.Fatalf("界面缺少 %q", text)
 		}
@@ -55,7 +55,7 @@ func TestConnectionTableColumns(t *testing.T) {
 		t.Fatalf("列表列定义 = %#v", columns)
 	}
 	if !strings.Contains(strings.Join(table.Rows()[0], " "), "192.168.1.10:22") {
-		t.Fatal("列表行未合并 Host:Port")
+		t.Fatal("列表行未合并 主机:端口")
 	}
 	if !strings.Contains(fitEllipsis(" 这是一个非常长的连接名称", nameColumnWidth), "...") {
 		t.Fatal("长名称未追加省略号")
@@ -179,11 +179,11 @@ func TestSortUsesCountAsTieBreaker(t *testing.T) {
 
 func TestSortHeaderIndicator(t *testing.T) {
 	view := ansi.Strip(newConnectionTable(60, 10, 0, true, testConnections, 'n', true).View())
-	if !strings.Contains(view, "Name ↑") {
+	if !strings.Contains(view, "名称 ↑") {
 		t.Fatalf("升序表头缺少箭头: %q", view)
 	}
 	view = ansi.Strip(newConnectionTable(60, 10, 0, true, testConnections, 'n', false).View())
-	if !strings.Contains(view, "Name ↓") {
+	if !strings.Contains(view, "名称 ↓") {
 		t.Fatalf("降序表头缺少箭头: %q", view)
 	}
 }

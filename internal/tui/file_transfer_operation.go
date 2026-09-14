@@ -366,12 +366,15 @@ func (m *transferModel) changeLocalDir(target string) error {
 	return nil
 }
 
-func (m transferModel) operationEntries() []transferEntry {
-	if len(m.selected) == 0 {
-		if entry, ok := m.currentEntry(); ok {
-			return []transferEntry{entry}
-		}
+// operationEntries 仅在焦点项已被选中时返回批量选择，否则清空选择并只返回焦点项。
+func (m *transferModel) operationEntries() []transferEntry {
+	current, ok := m.currentEntry()
+	if !ok {
 		return nil
+	}
+	if _, selected := m.selected[current.name]; !selected {
+		clear(m.selected)
+		return []transferEntry{current}
 	}
 	entries := make([]transferEntry, 0, len(m.selected))
 	for _, entry := range m.currentEntries() {
@@ -414,7 +417,7 @@ func (m transferModel) startDelete() (modalModel, tea.Cmd) {
 	for _, entry := range entries {
 		sources = append(sources, filepath.Join(m.localPath, entry.name))
 	}
-	return m.startLocalTask(localOp{action: 'd', sources: sources}, "删除", false)
+	return m.startLocalTask(localOp{action: 'd', sources: sources}, "删除", m.atClipboardSource())
 }
 
 func (m transferModel) startLocalTask(operation localOp, name string, clearClipboard bool) (modalModel, tea.Cmd) {
@@ -499,7 +502,7 @@ func (m transferModel) startRemoteDelete() (modalModel, tea.Cmd) {
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	task := &transferTask{cancel: cancel, updates: make(chan tea.Msg), remote: true}
+	task := &transferTask{cancel: cancel, updates: make(chan tea.Msg), remote: true, clearClipboard: m.atClipboardSource()}
 	directory := m.remotePath
 	task.run = func(ctx context.Context, task *transferTask) {
 		var processed, total int64
