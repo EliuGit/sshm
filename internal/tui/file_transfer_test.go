@@ -538,6 +538,14 @@ func TestTransferProgressOverlayLifecycle(t *testing.T) {
 	if m.overlay.kind != overlayNone {
 		t.Fatal("复制完成后进度弹窗未自动关闭")
 	}
+
+	task := &transferTask{cancel: func() {}, remote: true, renameOld: "old", renameNew: "new"}
+	m.task = task
+	m.overlay = transferOverlay{kind: overlayProgress, progress: progressRunning, operation: "重命名"}
+	updated, _ = m.Update(transferDoneMsg{task: task, item: "old"})
+	if updated.(transferModel).overlay.kind != overlayNone {
+		t.Fatal("远程重命名成功后进度弹窗未自动关闭")
+	}
 }
 
 func TestFileTransferRenameInput(t *testing.T) {

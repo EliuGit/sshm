@@ -168,12 +168,17 @@ func (s *Shell) open(client *gossh.Client, inputFd, outputFd uintptr) error {
 		return fmt.Errorf("启动远端 Shell: %w", err)
 	}
 	forwarder.Start()
-	waitErr := session.Wait()
+	waitErr := ignoreNormalShellExit(session.Wait())
 	stopErr := forwarder.Stop()
-	if exitErr, ok := waitErr.(*gossh.ExitError); ok && exitErr.ExitStatus() == 0 {
-		waitErr = nil
-	}
 	return errors.Join(waitErr, stopErr)
+}
+
+// ignoreNormalShellExit 忽略交互式 Shell 的普通退出码，但保留信号终止和通信错误。
+func ignoreNormalShellExit(err error) error {
+	if exitErr, ok := err.(*gossh.ExitError); ok && exitErr.Signal() == "" {
+		return nil
+	}
+	return err
 }
 
 // authMethods 根据数据库凭据类型生成密码或私钥认证方法。

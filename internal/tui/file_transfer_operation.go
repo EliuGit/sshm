@@ -554,7 +554,7 @@ func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 		return m, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	task := &transferTask{cancel: cancel, updates: make(chan tea.Msg), remote: true, renameOld: oldName, renameNew: newName}
+	task := &transferTask{cancel: cancel, updates: make(chan tea.Msg), remote: true, focus: newName, renameOld: oldName, renameNew: newName}
 	oldPath, newPath := path.Join(m.remotePath, oldName), path.Join(m.remotePath, newName)
 	task.run = func(ctx context.Context, task *transferTask) {
 		task.updates <- transferProgressMsg{task: task, item: oldName, itemIndex: 1, totalItems: 1}
@@ -754,7 +754,7 @@ func (m transferModel) handleTask(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 				m.focusEntry(msg.task.focus)
 			}
 		}
-		if !msg.cancelled && msg.err == nil && msg.task.renameOld == "" {
+		if !msg.cancelled && msg.err == nil {
 			m.overlay = transferOverlay{}
 		}
 		return m, refreshCmd, true

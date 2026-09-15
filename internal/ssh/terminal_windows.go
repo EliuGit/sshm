@@ -7,14 +7,13 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const enableVirtualTerminalProcessing = 0x0004
 const utf8CodePage = 65001
 
 func resetInput(inputFd uintptr) error {
 	return windows.FlushConsoleInputBuffer(windows.Handle(inputFd))
 }
 
-// prepareTerminal 保存终端状态，开启 raw 与虚拟终端输出，并返回恢复函数。
+// prepareTerminal 保存终端状态，开启 raw、虚拟终端输出和延迟换行，并返回恢复函数。
 func prepareTerminal(inputFd, outputFd uintptr) (func(), error) {
 	restoreInputCodePage, err := useUTF8ConsoleInput()
 	if err != nil {
@@ -27,17 +26,20 @@ func prepareTerminal(inputFd, outputFd uintptr) (func(), error) {
 	}
 	outputHandle := windows.Handle(outputFd)
 	var outputMode uint32
-	outputModeChanged := false
-	if err := windows.GetConsoleMode(outputHandle, &outputMode); err == nil {
-		_ = windows.SetConsoleMode(outputHandle, outputMode|enableVirtualTerminalProcessing)
-		outputModeChanged = true
+	if err := windows.GetConsoleMode(outputHandle, &outputMode); err != nil {
+		_ = term.Restore(inputFd, state)
+		restoreInputCodePage()
+		return nil, err
+	}
+	if err := windows.SetConsoleMode(outputHandle, outputMode|windows.ENABLE_VIRTUAL_TERMINAL_PROCESSING|windows.DISABLE_NEWLINE_AUTO_RETURN); err != nil {
+		_ = term.Restore(inputFd, state)
+		restoreInputCodePage()
+		return nil, err
 	}
 	return func() {
 		_ = term.Restore(inputFd, state)
 		restoreInputCodePage()
-		if outputModeChanged {
-			_ = windows.SetConsoleMode(outputHandle, outputMode)
-		}
+		_ = windows.SetConsoleMode(outputHandle, outputMode)
 	}, nil
 }
 

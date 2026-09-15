@@ -1,12 +1,24 @@
 package ssh
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"testing"
 
 	"github.com/muesli/cancelreader"
+	gossh "golang.org/x/crypto/ssh"
 )
+
+func TestNormalRemoteExitIsNotConnectionFailure(t *testing.T) {
+	if err := ignoreNormalShellExit(&gossh.ExitError{}); err != nil {
+		t.Fatalf("普通远端退出被当作连接错误: %v", err)
+	}
+	transportErr := errors.New("连接中断")
+	if err := ignoreNormalShellExit(transportErr); !errors.Is(err, transportErr) {
+		t.Fatalf("通信错误被忽略: %v", err)
+	}
+}
 
 // blockingCancelReader 模拟会一直等待终端输入、直到被主动取消的读取器。
 type blockingCancelReader struct {
