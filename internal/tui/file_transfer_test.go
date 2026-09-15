@@ -309,10 +309,10 @@ func TestFileTransferDetailsUseSectionSpacing(t *testing.T) {
 	if !strings.Contains(view, ansi.Strip(centeredSection("状态", 25))) {
 		t.Fatalf("状态标题未使用与剪贴板相同的居中样式: %q", view)
 	}
-	m.clipboard.entries = []transferEntry{{name: "server.log"}}
+	m.clipboard.entries = []transferEntry{{name: "downloads", dir: true}, {name: "server.log"}}
 	view = ansi.Strip(strings.Join(m.renderDetails(25, 16), "\n"))
-	if !strings.Contains(view, "server.log") || strings.Contains(view, "复制 ·") {
-		t.Fatalf("剪贴板未直接显示文件名列表: %q", view)
+	if !strings.Contains(view, "📁 downloads") || !strings.Contains(view, "📄 server.log") || strings.Contains(view, "复制 ·") {
+		t.Fatalf("剪贴板未显示文件类型图标和名称: %q", view)
 	}
 }
 

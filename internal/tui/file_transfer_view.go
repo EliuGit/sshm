@@ -117,11 +117,7 @@ func (m transferModel) renderList(width, height int) []string {
 			}
 			cursor = selectedMarkStyle.Render(marker) + " "
 		}
-		iconText, iconStyle := "📄", fileStyle
-		if entry.dir {
-			iconText, iconStyle = "📁", folderStyle
-		}
-		icon := iconStyle.Render(iconText)
+		icon := renderTransferEntryIcon(entry)
 		name := entry.name
 		if focused {
 			name = accentStyle.Render(name)
@@ -142,7 +138,7 @@ func (m transferModel) renderDetails(width, height int) []string {
 	} else {
 		available := max(0, height-len(values)-3)
 		for _, entry := range m.clipboard.entries[:min(len(m.clipboard.entries), available)] {
-			values = append(values, " "+entry.name)
+			values = append(values, " "+renderTransferEntryIcon(entry)+" "+entry.name)
 		}
 	}
 	for len(values) < height-3 {
@@ -159,6 +155,13 @@ func (m transferModel) renderDetails(width, height int) []string {
 		}
 	}
 	return rows
+}
+
+func renderTransferEntryIcon(entry transferEntry) string {
+	if entry.dir {
+		return folderStyle.Render("📁")
+	}
+	return fileStyle.Render("📄")
 }
 
 func (m transferModel) sortLabel() string {
