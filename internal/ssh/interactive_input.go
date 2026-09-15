@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"sshm/internal/i18n"
+
 	"github.com/muesli/cancelreader"
 )
 
@@ -28,11 +30,11 @@ type inputForwarder struct {
 
 func newInputForwarder(input io.Reader, writer io.WriteCloser) (*inputForwarder, error) {
 	if input == nil || writer == nil {
-		return nil, errors.New("交互式输入或远端输入不可用")
+		return nil, errors.New(i18n.T("Interactive or remote input is unavailable"))
 	}
 	reader, err := cancelreader.NewReader(input)
 	if err != nil {
-		return nil, fmt.Errorf("创建可取消的终端输入: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to create cancellable terminal input"), err)
 	}
 	return &inputForwarder{reader: reader, writer: writer, done: make(chan error, 1)}, nil
 }
@@ -71,7 +73,7 @@ func (f *inputForwarder) Stop() error {
 		case err := <-f.done:
 			f.stopErr = errors.Join(err, f.reader.Close())
 		case <-time.After(inputStopTimeout):
-			f.stopErr = errors.Join(errors.New("等待终端输入转发停止超时"), f.reader.Close())
+			f.stopErr = errors.Join(errors.New(i18n.T("Timed out waiting for terminal input forwarding to stop")), f.reader.Close())
 		}
 	})
 	return f.stopErr

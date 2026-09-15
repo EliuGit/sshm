@@ -1,9 +1,12 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"sshm/internal/i18n"
 )
 
 const (
@@ -19,7 +22,7 @@ func dbPath() (string, error) {
 	if raw := os.Getenv(DbPathEnvVarKey); raw != "" {
 		info, err := os.Stat(raw)
 		if err != nil {
-			return "", fmt.Errorf("SSHM_DB_PATH 指向的路径不可用: %w", err)
+			return "", fmt.Errorf("%s: %w", i18n.T("SSHM_DB_PATH is unavailable"), err)
 		}
 		if info.Mode().IsRegular() {
 			return raw, nil
@@ -27,7 +30,7 @@ func dbPath() (string, error) {
 		if info.IsDir() {
 			return filepath.Join(raw, DbDefaultName), nil
 		}
-		return "", fmt.Errorf("SSHM_DB_PATH 不是文件或目录: %s", raw)
+		return "", errors.New(i18n.T("SSHM_DB_PATH is not a file or directory: %s", raw))
 	}
 
 	if path := findDB(); path != "" {

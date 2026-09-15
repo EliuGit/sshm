@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 
 	"github.com/pkg/sftp"
@@ -28,7 +29,7 @@ func NewSFTP(ctx context.Context, connection repository.Connection, credential [
 	client, err := sftp.NewClient(sshClient)
 	if err != nil {
 		_ = sshClient.Close()
-		return nil, fmt.Errorf("创建 SFTP 会话: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to create SFTP session"), err)
 	}
 	return &SFTP{client: client, ssh: sshClient}, nil
 }

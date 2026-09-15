@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 
 	"github.com/charmbracelet/x/term"
@@ -64,7 +65,7 @@ func (s *Shell) Run() error {
 	input, inputOK := s.stdin.(interface{ Fd() uintptr })
 	output, outputOK := s.stdout.(interface{ Fd() uintptr })
 	if !inputOK || !outputOK || !term.IsTerminal(input.Fd()) || !term.IsTerminal(output.Fd()) {
-		return errors.New("连接 Shell 需要交互式终端")
+		return errors.New(i18n.T("SSH shell requires an interactive terminal"))
 	}
 
 	client, err := dial(context.Background(), s.connection, s.credential)
@@ -97,7 +98,7 @@ func dial(ctx context.Context, connection repository.Connection, credential []by
 	address := net.JoinHostPort(connection.Host, strconv.Itoa(connection.Port))
 	network, err := (&net.Dialer{Timeout: dialTimeout}).DialContext(ctx, "tcp", address)
 	if err != nil {
-		return nil, fmt.Errorf("连接 %s: %w", address, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Connect to %s", address), err)
 	}
 	stopCancel := context.AfterFunc(ctx, func() { _ = network.Close() })
 	sshConnection, channels, requests, err := gossh.NewClientConn(network, address, config)
@@ -107,7 +108,7 @@ func dial(ctx context.Context, connection repository.Connection, credential []by
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, fmt.Errorf("连接 %s: %w", address, err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Connect to %s", address), err)
 	}
 	if !stopped || ctx.Err() != nil {
 		_ = sshConnection.Close()
@@ -121,16 +122,16 @@ func dial(ctx context.Context, connection repository.Connection, credential []by
 func (s *Shell) open(client *gossh.Client, inputFd, outputFd uintptr) error {
 	session, err := client.NewSession()
 	if err != nil {
-		return fmt.Errorf("创建 SSH 会话: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to create SSH session"), err)
 	}
 	defer session.Close()
 
 	if err := resetInput(inputFd); err != nil {
-		return fmt.Errorf("清理终端输入: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to clean up terminal input"), err)
 	}
 	restoreTerminal, err := prepareTerminal(inputFd, outputFd)
 	if err != nil {
-		return fmt.Errorf("切换终端模式: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to switch terminal mode"), err)
 	}
 	defer restoreTerminal()
 
@@ -144,12 +145,12 @@ func (s *Shell) open(client *gossh.Client, inputFd, outputFd uintptr) error {
 		gossh.TTY_OP_OSPEED: 14400,
 	}
 	if err := session.RequestPty(terminalName(), height, width, modes); err != nil {
-		return fmt.Errorf("申请远端 PTY: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to request remote PTY"), err)
 	}
 
 	remoteInput, err := session.StdinPipe()
 	if err != nil {
-		return fmt.Errorf("创建远端标准输入: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to create remote standard input"), err)
 	}
 	forwarder, err := newInputForwarder(s.stdin, remoteInput)
 	if err != nil {
@@ -165,7 +166,7 @@ func (s *Shell) open(client *gossh.Client, inputFd, outputFd uintptr) error {
 
 	if err := session.Shell(); err != nil {
 		_ = forwarder.Stop()
-		return fmt.Errorf("启动远端 Shell: %w", err)
+		return fmt.Errorf("%s: %w", i18n.T("Failed to start remote shell"), err)
 	}
 	forwarder.Start()
 	waitErr := session.Wait()
@@ -179,7 +180,7 @@ func (s *Shell) open(client *gossh.Client, inputFd, outputFd uintptr) error {
 // authMethods 根据数据库凭据类型生成密码或私钥认证方法。
 func authMethods(credentialType string, credential []byte) ([]gossh.AuthMethod, error) {
 	if len(credential) == 0 {
-		return nil, errors.New("SSH 凭据为空")
+		return nil, errors.New(i18n.T("SSH credential is empty"))
 	}
 	switch credentialType {
 	case "passwd":
@@ -197,11 +198,11 @@ func authMethods(credentialType string, credential []byte) ([]gossh.AuthMethod, 
 	case "key":
 		signer, err := gossh.ParsePrivateKey(credential)
 		if err != nil {
-			return nil, fmt.Errorf("解析 SSH 私钥: %w", err)
+			return nil, fmt.Errorf("%s: %w", i18n.T("Failed to parse SSH private key"), err)
 		}
 		return []gossh.AuthMethod{gossh.PublicKeys(signer)}, nil
 	default:
-		return nil, fmt.Errorf("不支持的 SSH 凭据类型: %s", credentialType)
+		return nil, errors.New(i18n.T("Unsupported SSH credential type: %s", credentialType))
 	}
 }
 
@@ -216,22 +217,22 @@ func terminalName() string {
 func knownHostsCallback() (gossh.HostKeyCallback, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("读取用户目录: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to read user home directory"), err)
 	}
 	path := filepath.Join(homeDir, ".ssh", "known_hosts")
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
-		return nil, fmt.Errorf("创建 SSH 配置目录: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to create SSH config directory"), err)
 	}
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
 	if err != nil {
-		return nil, fmt.Errorf("打开 known_hosts: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to open known_hosts"), err)
 	}
 	if err := file.Close(); err != nil {
-		return nil, fmt.Errorf("关闭 known_hosts: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to close known_hosts"), err)
 	}
 	callback, err := knownhosts.New(path)
 	if err != nil {
-		return nil, fmt.Errorf("读取 known_hosts: %w", err)
+		return nil, fmt.Errorf("%s: %w", i18n.T("Failed to read known_hosts"), err)
 	}
 	return func(hostname string, remote net.Addr, key gossh.PublicKey) error {
 		err := callback(hostname, remote, key)

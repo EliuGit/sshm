@@ -8,6 +8,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 )
 
@@ -22,9 +23,9 @@ const (
 )
 
 var (
-	formLabelStyle     = mutedStyle.Width(6)
-	formActiveLabel    = accentStyle.Width(6).Bold(false)
-	formInputStyle     = lipgloss.NewStyle().Width(42).Padding(0, 1)
+	formLabelStyle     = mutedStyle.Width(13)
+	formActiveLabel    = accentStyle.Width(13).Bold(false)
+	formInputStyle     = lipgloss.NewStyle().Width(35).Padding(0, 1)
 	formInputFocused   = formInputStyle.Foreground(textColor)
 	formSectionStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9AA1AE"))
 	formChoiceStyle    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("#9AA1AE"))
@@ -64,11 +65,11 @@ type connectionFormModel struct {
 func newConnectionForm(store *repository.Store) connectionFormModel {
 	m := connectionFormModel{
 		store:          store,
-		connectionName: newFormInput("例如：生产服务器", 24),
-		host:           newFormInput("192.168.1.10 或域名", 125),
+		connectionName: newFormInput(i18n.T("e.g. production server"), 24),
+		host:           newFormInput(i18n.T("host name or 192.168.1.10"), 125),
 		port:           newFormInput("22", 5),
-		username:       newFormInput("例如：root", 24),
-		remark:         newFormInput("可选", 256),
+		username:       newFormInput(i18n.T("e.g. root"), 24),
+		remark:         newFormInput(i18n.T("optional"), 256),
 	}
 	m.port.SetValue("22")
 	m.connectionName.Focus()
@@ -83,7 +84,7 @@ func newConnectionEditForm(store *repository.Store, connection connectionRow) co
 	m.port.SetValue(connection.port)
 	m.username.SetValue(connection.username)
 	m.remark.SetValue(connection.remark)
-	m.credential = &repository.Credential{ID: connection.credID, Name: connection.credName, Type: map[string]string{"密码": "passwd", "私钥": "key"}[connection.auth]}
+	m.credential = &repository.Credential{ID: connection.credID, Name: connection.credName, Type: authCode(connection.auth)}
 	return m
 }
 
@@ -92,7 +93,7 @@ func newFormInput(placeholder string, limit int) textinput.Model {
 	input.Prompt = ""
 	input.Placeholder = placeholder
 	input.CharLimit = limit
-	input.SetWidth(40)
+	input.SetWidth(33)
 	styles := input.Styles()
 	styles.Focused.Text = plainStyle
 	styles.Focused.Placeholder = mutedStyle
@@ -203,19 +204,19 @@ func (m connectionFormModel) updateInput(msg tea.Msg) (modalModel, tea.Cmd) {
 func (m connectionFormModel) save() (modalModel, tea.Cmd) {
 	port, err := strconv.Atoi(strings.TrimSpace(m.port.Value()))
 	if err != nil || port < 1 || port > 65535 {
-		m.err = "端口必须是 1 到 65535 之间的数字"
+		m.err = i18n.T("Port must be between 1 and 65535")
 		return m, nil
 	}
 	if strings.TrimSpace(m.connectionName.Value()) == "" || strings.TrimSpace(m.host.Value()) == "" || strings.TrimSpace(m.username.Value()) == "" {
-		m.err = "名称、主机和用户不能为空"
+		m.err = i18n.T("Name, host, and user are required")
 		return m, nil
 	}
 	if m.credential == nil {
-		m.err = "请选择登录凭据"
+		m.err = i18n.T("Select a login credential")
 		return m, nil
 	}
 	if m.store == nil {
-		m.err = "数据库未连接"
+		m.err = i18n.T("Database is not connected")
 		return m, nil
 	}
 	input := repository.NewConnection{
@@ -242,26 +243,26 @@ func (m connectionFormModel) save() (modalModel, tea.Cmd) {
 
 func (m connectionFormModel) View() string {
 	lines := []string{
-		modalTitleStyle.Render(map[bool]string{true: "编辑连接", false: "新增连接"}[m.editing]),
+		modalTitleStyle.Render(map[bool]string{true: i18n.T("Edit connection"), false: i18n.T("New connection")}[m.editing]),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
-		m.inputRow("名称", m.connectionName.View(), connectionNameField),
+		m.inputRow(i18n.T("Name"), m.connectionName.View(), connectionNameField),
 		"",
-		m.inputRow("主机", m.host.View(), hostField),
+		m.inputRow(i18n.T("Host"), m.host.View(), hostField),
 		"",
-		m.inputRow("端口", m.port.View(), portField),
+		m.inputRow(i18n.T("Port"), m.port.View(), portField),
 		"",
-		m.inputRow("用户", m.username.View(), usernameField),
+		m.inputRow(i18n.T("User"), m.username.View(), usernameField),
 		"",
-		m.inputRow("备注", m.remark.View(), remarkField),
+		m.inputRow(i18n.T("Remark"), m.remark.View(), remarkField),
 		"",
 		m.credentialRow(),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
 	}
-	status := "Ctrl+S: 保存 | Esc: 取消"
+	status := i18n.T("Ctrl+S: Save | Esc: Cancel")
 	if m.err != "" {
 		status = formErrorStyle.Render(m.err)
 	} else if m.saving {
-		status = accentStyle.Render("正在保存...")
+		status = accentStyle.Render(i18n.T("Saving..."))
 	} else {
 		status = mutedStyle.Render(status)
 	}
@@ -278,10 +279,10 @@ func (m connectionFormModel) inputRow(label, value string, field int) string {
 }
 
 func (m connectionFormModel) credentialRow() string {
-	value := "未选择" + mutedStyle.Render("  （Enter 打开凭据列表）")
+	value := i18n.T("None") + mutedStyle.Render(i18n.T(" (Enter to choose)"))
 	if m.credential != nil {
-		kind := map[string]string{"passwd": "密码", "key": "私钥"}[m.credential.Type]
+		kind := authLabel(m.credential.Type)
 		value = "[" + kind + "]" + m.credential.Name
 	}
-	return m.inputRow("凭据", value, connectionCredentialField)
+	return m.inputRow(i18n.T("Credential"), value, connectionCredentialField)
 }

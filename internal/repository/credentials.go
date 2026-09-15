@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"database/sql"
 	"errors"
-	"fmt"
 	"strings"
+
+	"sshm/internal/i18n"
 )
 
 // ListCredentials 返回可供连接选择的凭据摘要及其关联连接数量，绝不读取密文。
@@ -32,13 +33,13 @@ func (s *Store) ListCredentials() ([]Credential, error) {
 func (s *Store) UpdateCredential(id int64, name, credentialType string, content []byte) error {
 	name = strings.TrimSpace(name)
 	if id <= 0 {
-		return errors.New("凭据不存在")
+		return errors.New(i18n.T("Credential does not exist"))
 	}
 	if name == "" {
-		return errors.New("凭据名称不能为空")
+		return errors.New(i18n.T("Credential name is required"))
 	}
 	if credentialType != "passwd" && credentialType != "key" {
-		return errors.New("凭据类型必须是密码或私钥")
+		return errors.New(i18n.T("Credential type must be password or private key"))
 	}
 	var result sql.Result
 	var err error
@@ -59,7 +60,7 @@ func (s *Store) UpdateCredential(id int64, name, credentialType string, content 
 		return err
 	}
 	if updated == 0 {
-		return errors.New("凭据不存在")
+		return errors.New(i18n.T("Credential does not exist"))
 	}
 	return nil
 }
@@ -76,7 +77,7 @@ func (s *Store) DeleteCredential(id int64) error {
 		return err
 	}
 	if count > 0 {
-		return fmt.Errorf("凭据仍关联 %d 个连接，不能删除", count)
+		return errors.New(i18n.T("Credential is used by %d connections; cannot delete", count))
 	}
 	result, err := tx.Exec("DELETE FROM credentials WHERE id=?", id)
 	if err != nil {
@@ -87,7 +88,7 @@ func (s *Store) DeleteCredential(id int64) error {
 		return err
 	}
 	if deleted == 0 {
-		return errors.New("凭据不存在")
+		return errors.New(i18n.T("Credential does not exist"))
 	}
 	return tx.Commit()
 }
@@ -96,10 +97,10 @@ func (s *Store) DeleteCredential(id int64) error {
 func (s *Store) CreateCredential(input NewCredential) (Credential, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(bytes.TrimSpace(input.Content)) == 0 {
-		return Credential{}, errors.New("凭据名称和内容不能为空")
+		return Credential{}, errors.New(i18n.T("Credential name and content are required"))
 	}
 	if input.Type != "passwd" && input.Type != "key" {
-		return Credential{}, errors.New("凭据类型必须是密码或私钥")
+		return Credential{}, errors.New(i18n.T("Credential type must be password or private key"))
 	}
 	nonce, ciphertext, err := s.Encrypt(input.Content)
 	if err != nil {

@@ -11,6 +11,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"sshm/internal/i18n"
 	ssh "sshm/internal/ssh"
 )
 
@@ -72,7 +73,7 @@ type transferDoneMsg struct {
 // startRemoteConnection 解密当前连接凭据，并在后台完成 SSH 认证和远程主目录读取。
 func (m *transferModel) connectRemote() tea.Cmd {
 	if m.store == nil {
-		m.status = "数据库未连接，无法建立远程连接"
+		m.status = i18n.T("Database is not connected")
 		return nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -80,10 +81,10 @@ func (m *transferModel) connectRemote() tea.Cmd {
 	m.overlay = transferOverlay{
 		kind:      overlayProgress,
 		progress:  progressConnecting,
-		operation: "连接",
+		operation: i18n.T("Connection"),
 		item:      m.connection.name,
 	}
-	m.status = "正在建立远程连接"
+	m.status = i18n.T("Connecting to the remote server...")
 	store, connectionID := m.store, m.connection.id
 	return func() tea.Msg {
 		connection, credential, err := store.SSHConnection(connectionID)
@@ -119,9 +120,9 @@ func (m *transferModel) connectRemote() tea.Cmd {
 				}
 				return sftpReadyMsg{client: client, home: path.Clean(home), entries: entriesFromRemote(infos)}
 			}
-			err = fmt.Errorf("读取远程主目录 %s: %w", home, err)
+			err = fmt.Errorf("%s: %w", i18n.T("Failed to read remote home directory %s", home), err)
 		} else {
-			err = fmt.Errorf("读取远程主目录: %w", err)
+			err = fmt.Errorf("%s: %w", i18n.T("Failed to read remote home directory"), err)
 		}
 		if stopCancel() {
 			_ = client.Close()
@@ -150,17 +151,17 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 				_ = msg.client.Close()
 			}
 			m.overlay.progress = progressCancelled
-			m.status = "远程连接已取消"
+			m.status = i18n.T("Remote connection canceled")
 			return m, nil, true
 		}
 		if msg.err != nil {
 			if errors.Is(msg.err, context.Canceled) {
 				m.overlay.progress = progressCancelled
-				m.status = "远程连接已取消"
+				m.status = i18n.T("Remote connection canceled")
 			} else {
 				m.overlay.progress = progressFailed
 				m.overlay.error = msg.err.Error()
-				m.status = "远程连接失败"
+				m.status = i18n.T("Connection failed")
 			}
 			return m, nil, true
 		}
@@ -170,7 +171,7 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 		m.remoteEntries = msg.entries
 		m.overlay = transferOverlay{}
 		m.syncAddress()
-		m.status = fmt.Sprintf("远程连接成功，已读取 %d 项", len(msg.entries))
+		m.status = i18n.T("Connection succeeded, read %d items", len(msg.entries))
 		return m, nil, true
 	case remoteDirMsg:
 		if msg.client != m.sftp {
@@ -184,9 +185,9 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 			return m, nil, true
 		}
 		if msg.err != nil {
-			prefix := "读取远程目录失败："
+			prefix := i18n.T("Failed to read remote directory: ")
 			if msg.address {
-				prefix = "跳转失败："
+				prefix = i18n.T("Jump failed: ")
 			}
 			m.status = prefix + msg.err.Error()
 			return m, nil, true
@@ -202,7 +203,7 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 				m.address.Blur()
 				m.focus = listFocus
 			}
-			m.status = fmt.Sprintf("已读取 %d 项", len(msg.entries))
+			m.status = i18n.T("Read %d items", len(msg.entries))
 		}
 		return m, nil, true
 	default:
@@ -212,25 +213,25 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 
 func (m *transferModel) loadRemoteDir(target, focus string, address bool) tea.Cmd {
 	if m.sftp == nil {
-		m.status = "远程连接不可用"
+		m.status = i18n.T("Remote connection is unavailable")
 		return nil
 	}
 	if m.cancelRead != nil {
-		m.status = "正在读取远程目录"
+		m.status = i18n.T("Reading remote directory")
 		return nil
 	}
 	resolved := resolveRemoteDir(m.remotePath, m.remoteHome, target)
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelRead = cancel
-	m.status = "正在读取远程目录"
+	m.status = i18n.T("Reading remote directory")
 	client := m.sftp
 	return func() tea.Msg {
 		info, err := client.Lstat(resolved)
 		if err == nil && info.Mode()&os.ModeSymlink != 0 {
-			err = errors.New("符号链接仅展示，不能进入")
+			err = errors.New(i18n.T("Symbolic links cannot be opened"))
 		}
 		if err == nil && !info.IsDir() {
-			err = errors.New("目标不是目录")
+			err = errors.New(i18n.T("Target is not a directory"))
 		}
 		var infos []os.FileInfo
 		if err == nil {
@@ -294,7 +295,7 @@ func readLocalDir(directory string) ([]transferEntry, error) {
 	for _, item := range items {
 		info, err := item.Info()
 		if err != nil {
-			return nil, fmt.Errorf("读取 %s: %w", item.Name(), err)
+			return nil, fmt.Errorf("%s: %w", i18n.T("Failed to read %s", item.Name()), err)
 		}
 		entries = append(entries, transferEntry{
 			name:     item.Name(),
@@ -312,7 +313,7 @@ func resolveLocalDir(current, target string) (string, error) {
 	if target == "~" || strings.HasPrefix(target, "~/") || strings.HasPrefix(target, `~\`) {
 		home, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("读取用户主目录: %w", err)
+			return "", fmt.Errorf("%s: %w", i18n.T("Failed to read user home directory"), err)
 		}
 		target = filepath.Join(home, strings.TrimLeft(target[1:], `/\`))
 	} else if !filepath.IsAbs(target) {
@@ -327,10 +328,10 @@ func resolveLocalDir(current, target string) (string, error) {
 		return "", err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return "", errors.New("符号链接仅展示，不能进入")
+		return "", errors.New(i18n.T("Symbolic links cannot be opened"))
 	}
 	if !info.IsDir() {
-		return "", errors.New("目标不是目录")
+		return "", errors.New(i18n.T("Target is not a directory"))
 	}
 	return filepath.Clean(absolute), nil
 }
@@ -338,13 +339,13 @@ func resolveLocalDir(current, target string) (string, error) {
 func (m *transferModel) refreshLocal() error {
 	entries, err := readLocalDir(m.localPath)
 	if err != nil {
-		m.status = "读取目录失败：" + err.Error()
+		m.status = i18n.T("Failed to read directory: ") + err.Error()
 		return err
 	}
 	m.localEntries = entries
 	m.pruneClipboard()
 	m.resetSelection()
-	m.status = fmt.Sprintf("已读取 %d 项", len(entries))
+	m.status = i18n.T("Read %d items", len(entries))
 	return nil
 }
 
@@ -362,7 +363,7 @@ func (m *transferModel) changeLocalDir(target string) error {
 	m.pruneClipboard()
 	m.resetSelection()
 	m.syncAddress()
-	m.status = fmt.Sprintf("已读取 %d 项", len(entries))
+	m.status = i18n.T("Read %d items", len(entries))
 	return nil
 }
 
@@ -394,7 +395,7 @@ func (m transferModel) startPaste() (modalModel, tea.Cmd) {
 		sources = append(sources, filepath.Join(m.clipboard.path, entry.name))
 	}
 	operation := localOp{action: 'c', sources: sources, targetDir: m.localPath}
-	return m.startLocalTask(operation, "复制", true)
+	return m.startLocalTask(operation, i18n.T("Copy"), true)
 }
 
 func (m transferModel) startDelete() (modalModel, tea.Cmd) {
@@ -404,12 +405,12 @@ func (m transferModel) startDelete() (modalModel, tea.Cmd) {
 	entries := m.operationEntries()
 	if len(entries) == 0 {
 		m.overlay = transferOverlay{}
-		m.status = "没有可删除的项目"
+		m.status = i18n.T("No items to delete")
 		return m, nil
 	}
 	for _, entry := range entries {
 		if entry.symlink {
-			m.status = "符号链接不能删除"
+			m.status = i18n.T("Symbolic links cannot be deleted")
 			return m, nil
 		}
 	}
@@ -417,7 +418,7 @@ func (m transferModel) startDelete() (modalModel, tea.Cmd) {
 	for _, entry := range entries {
 		sources = append(sources, filepath.Join(m.localPath, entry.name))
 	}
-	return m.startLocalTask(localOp{action: 'd', sources: sources}, "删除", m.atClipboardSource())
+	return m.startLocalTask(localOp{action: 'd', sources: sources}, i18n.T("Delete"), m.atClipboardSource())
 }
 
 func (m transferModel) startLocalTask(operation localOp, name string, clearClipboard bool) (modalModel, tea.Cmd) {
@@ -450,12 +451,12 @@ func (m transferModel) startTask(task *transferTask, name string, sources []stri
 // startRemotePasteOperation 根据剪贴板来源和当前目标端选择上传、下载或远程复制。
 func (m transferModel) startRemotePaste() (modalModel, tea.Cmd) {
 	if m.sftp == nil {
-		m.status = "远程连接不可用"
+		m.status = i18n.T("Remote connection is unavailable")
 		return m, nil
 	}
 	entries := m.clipboard.entries
 	if len(entries) == 0 {
-		m.status = "剪贴板为空"
+		m.status = i18n.T("Clipboard is empty")
 		return m, nil
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -470,12 +471,12 @@ func (m transferModel) startRemotePaste() (modalModel, tea.Cmd) {
 	for i := range entries {
 		sources[i] = entries[i].name
 	}
-	name := "复制"
+	name := i18n.T("Copy")
 	if sourceLocation != targetLocation {
 		if sourceLocation == localSide {
-			name = "上传"
+			name = i18n.T("Upload")
 		} else {
-			name = "下载"
+			name = i18n.T("Download")
 		}
 	}
 	return m.startTask(task, name, sources, ctx)
@@ -485,19 +486,19 @@ func (m transferModel) startRemotePaste() (modalModel, tea.Cmd) {
 func (m transferModel) startRemoteDelete() (modalModel, tea.Cmd) {
 	if m.sftp == nil {
 		m.overlay = transferOverlay{}
-		m.status = "远程连接不可用"
+		m.status = i18n.T("Remote connection is unavailable")
 		return m, nil
 	}
 	entries := m.operationEntries()
 	if len(entries) == 0 {
 		m.overlay = transferOverlay{}
-		m.status = "没有可删除的项目"
+		m.status = i18n.T("No items to delete")
 		return m, nil
 	}
 	for _, entry := range entries {
 		if entry.symlink {
 			m.overlay = transferOverlay{}
-			m.status = "符号链接不能删除"
+			m.status = i18n.T("Symbolic links cannot be deleted")
 			return m, nil
 		}
 	}
@@ -535,18 +536,18 @@ func (m transferModel) startRemoteDelete() (modalModel, tea.Cmd) {
 	for i := range entries {
 		sources[i] = entries[i].name
 	}
-	return m.startTask(task, "删除", sources, ctx)
+	return m.startTask(task, i18n.T("Delete"), sources, ctx)
 }
 
 // startRemoteRename 校验单个名称、拒绝覆盖，并在后台提交远程重命名。
 func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 	if m.sftp == nil {
-		m.overlay.error = "远程连接不可用"
+		m.overlay.error = i18n.T("Remote connection is unavailable")
 		return m, nil
 	}
 	oldName, newName := m.overlay.renameOld, strings.TrimSpace(m.overlay.renameInput.Value())
 	if newName == "" || newName == "." || newName == ".." || path.Base(newName) != newName || strings.Contains(newName, "/") {
-		m.overlay.error = "名称不能包含路径且不能为空"
+		m.overlay.error = i18n.T("Enter a name without a path")
 		return m, nil
 	}
 	if newName == oldName {
@@ -559,7 +560,7 @@ func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 	task.run = func(ctx context.Context, task *transferTask) {
 		task.updates <- transferProgressMsg{task: task, item: oldName, itemIndex: 1, totalItems: 1}
 		if _, err := m.sftp.Lstat(newPath); err == nil {
-			task.updates <- transferDoneMsg{task: task, item: oldName, err: errors.New("目标名称已存在")}
+			task.updates <- transferDoneMsg{task: task, item: oldName, err: errors.New(i18n.T("Name already exists"))}
 			return
 		} else if !errors.Is(err, os.ErrNotExist) {
 			task.updates <- transferDoneMsg{task: task, item: oldName, err: err}
@@ -568,12 +569,12 @@ func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 		err := m.sftp.Rename(oldPath, newPath)
 		task.updates <- transferDoneMsg{task: task, item: oldName, err: err}
 	}
-	return m.startTask(task, "重命名", []string{oldName}, ctx)
+	return m.startTask(task, i18n.T("Rename"), []string{oldName}, ctx)
 }
 
 func validName(name string) error {
 	if name == "" || name == "." || name == ".." || filepath.Base(name) != name || strings.ContainsAny(name, `/\\`) {
-		return errors.New("名称不能包含路径且不能为空")
+		return errors.New(i18n.T("Enter a name without a path"))
 	}
 	return nil
 }
@@ -591,11 +592,11 @@ func (m transferModel) startCreate(name string) (modalModel, tea.Cmd) {
 			err = os.Mkdir(filepath.Join(directory, name), 0o755)
 		}
 		if errors.Is(err, os.ErrExist) {
-			err = errors.New("目标文件夹已存在")
+			err = errors.New(i18n.T("Folder already exists"))
 		}
 		task.updates <- transferDoneMsg{task: task, item: name, err: err}
 	}
-	return m.startTask(task, "新建文件夹", []string{name}, ctx)
+	return m.startTask(task, i18n.T("New folder"), []string{name}, ctx)
 }
 
 // runRemotePasteOperation 顺序执行跨端复制任务。
@@ -606,7 +607,7 @@ func runRemotePaste(ctx context.Context, task *transferTask, client *ssh.SFTP, s
 		task.updates <- transferDoneMsg{task: task, item: item, cancelled: errors.Is(err, context.Canceled), err: err}
 	}()
 	if len(entries) == 0 {
-		err = errors.New("没有待处理项目")
+		err = errors.New(i18n.T("No items to process"))
 		return
 	}
 	names, nameErr := planTransferNames(client, targetLocation, targetDir, entries)
@@ -643,7 +644,7 @@ func runRemotePaste(ctx context.Context, task *transferTask, client *ssh.SFTP, s
 		source := path.Join(sourceDir, entry.name)
 		target := path.Join(targetDir, names[index])
 		if sourceLocation == remoteSide && targetLocation == remoteSide && entry.dir && remotePathContains(source, targetDir) {
-			err = errors.New("不能复制目录到其自身或子目录")
+			err = errors.New(i18n.T("Cannot copy a directory into itself or a subdirectory"))
 			return
 		}
 		if sourceLocation == localSide && targetLocation == remoteSide {
@@ -712,14 +713,14 @@ func (m transferModel) handleTask(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 		msg.task.cancel()
 		m.task = nil
 		m.overlay.item = msg.item
-		resultStatus := "操作已完成"
+		resultStatus := i18n.T("Operation completed")
 		if msg.cancelled {
 			m.overlay.progress = progressCancelled
-			resultStatus = "操作已取消"
+			resultStatus = i18n.T("Operation canceled")
 		} else if msg.err != nil {
 			m.overlay.progress = progressFailed
-			m.overlay.error = fmt.Sprintf("%s：%v", msg.item, msg.err)
-			resultStatus = "操作失败"
+			m.overlay.error = i18n.T("%s: %v", msg.item, msg.err)
+			resultStatus = i18n.T("Operation failed")
 		} else {
 			m.overlay.progress = progressCompleted
 			m.overlay.processedBytes = m.overlay.totalBytes
@@ -747,7 +748,7 @@ func (m transferModel) handleTask(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 			refreshErr = m.refreshLocal()
 		}
 		if refreshErr != nil {
-			m.status = resultStatus + "，但刷新失败：" + refreshErr.Error()
+			m.status = resultStatus + i18n.T(", but refresh failed: ") + refreshErr.Error()
 		} else {
 			m.status = resultStatus
 			if msg.task.focus != "" && !msg.cancelled && msg.err == nil && !msg.task.remote {
@@ -786,7 +787,7 @@ func runLocalTask(ctx context.Context, task *transferTask, operation localOp) {
 	item := ""
 	err := func() error {
 		if len(operation.sources) == 0 {
-			return errors.New("没有待处理项目")
+			return errors.New(i18n.T("No items to process"))
 		}
 		item = filepath.Base(operation.sources[0])
 		totalBytes, err := localSize(ctx, operation.sources, operation.action != 'd')
@@ -821,7 +822,7 @@ func runLocalTask(ctx context.Context, task *transferTask, operation localOp) {
 				}
 				target := filepath.Join(operation.targetDir, planned[index])
 				if info.IsDir() && localContains(source, operation.targetDir) {
-					return errors.New("不能复制目录到其自身或子目录")
+					return errors.New(i18n.T("Cannot copy a directory into itself or a subdirectory"))
 				}
 				err = copyLocal(ctx, source, target, report)
 			}
@@ -846,14 +847,14 @@ func localSize(ctx context.Context, sources []string, rejectUnsupported bool) (i
 				return err
 			}
 			if rejectUnsupported && entry.Type()&os.ModeSymlink != 0 {
-				return fmt.Errorf("符号链接 %s 不支持文件操作", entry.Name())
+				return errors.New(i18n.T("Symbolic link %s cannot be used for file operations", entry.Name()))
 			}
 			if entry.IsDir() {
 				return nil
 			}
 			info, err := entry.Info()
 			if err == nil && rejectUnsupported && !info.Mode().IsRegular() {
-				return fmt.Errorf("不支持的文件类型：%s", entry.Name())
+				return errors.New(i18n.T("Unsupported file type: %s", entry.Name()))
 			}
 			if err == nil {
 				total += info.Size()
@@ -893,17 +894,17 @@ func planLocalTargets(targetDir string, sources []string) ([]string, error) {
 // renameLocalEntry 只接受单个文件名，并拒绝覆盖目录内已有项目。
 func renameLocal(directory, oldName, newName string) error {
 	if strings.TrimSpace(newName) == "" {
-		return errors.New("名称不能为空")
+		return errors.New(i18n.T("Name is required"))
 	}
 	if newName == "." || newName == ".." || filepath.Base(newName) != newName || strings.ContainsAny(newName, `/\`) {
-		return errors.New("名称不能包含路径")
+		return errors.New(i18n.T("Name cannot contain a path"))
 	}
 	if newName == oldName {
 		return nil
 	}
 	target := filepath.Join(directory, newName)
 	if _, err := os.Lstat(target); err == nil {
-		return errors.New("目标名称已存在")
+		return errors.New(i18n.T("Name already exists"))
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -954,11 +955,11 @@ func copyLocal(ctx context.Context, source, target string, report func(int64)) (
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return errors.New("符号链接不支持复制")
+		return errors.New(i18n.T("Symbolic links cannot be copied"))
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持的文件类型：%s", filepath.Base(source))
+			return errors.New(i18n.T("Unsupported file type: %s", filepath.Base(source)))
 		}
 		return copyFile(ctx, source, target, info.Mode(), report)
 	}
@@ -978,7 +979,7 @@ func copyLocal(ctx context.Context, source, target string, report func(int64)) (
 			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("符号链接 %s 不支持复制", entry.Name())
+			return errors.New(i18n.T("Symbolic link %s cannot be copied", entry.Name()))
 		}
 		if path == source {
 			return nil
@@ -996,7 +997,7 @@ func copyLocal(ctx context.Context, source, target string, report func(int64)) (
 			return os.Mkdir(destination, info.Mode().Perm())
 		}
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持的文件类型：%s", entry.Name())
+			return errors.New(i18n.T("Unsupported file type: %s", entry.Name()))
 		}
 		return copyFile(ctx, path, destination, info.Mode(), report)
 	})
@@ -1042,7 +1043,7 @@ func removeLocal(ctx context.Context, source string, report func(int64)) error {
 			return err
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
-			return fmt.Errorf("符号链接 %s 不支持删除", entry.Name())
+			return errors.New(i18n.T("Symbolic link %s cannot be deleted", entry.Name()))
 		}
 		info, err := entry.Info()
 		if err != nil {

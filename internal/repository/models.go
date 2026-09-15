@@ -45,8 +45,8 @@ type NewConnection struct {
 	Remark       string
 }
 
-// ErrInvalidPassword 表示主密码无法解封数据密钥。
-var ErrInvalidPassword = errors.New("主密码不正确")
+// ErrInvalidPassword 表示主密码无法解封数据密钥；展示层负责生成本地化提示。
+var ErrInvalidPassword = errors.New("invalid master password")
 
 // Status 表示数据库是否已完成主密钥初始化。
 type Status int

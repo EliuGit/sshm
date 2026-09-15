@@ -65,7 +65,7 @@ func TestSavedPasswordFailureShowsEnvironmentMessage(t *testing.T) {
 	store.Close()
 
 	app := newApplicationModel(path, repository.Ready, "wrong")
-	if app.initializing.err != "环境变量中的密码不正确，请手动输入" {
+	if app.initializing.err != "环境变量密码错误，请手动输入" {
 		t.Fatalf("环境变量密码错误提示 = %q", app.initializing.err)
 	}
 }

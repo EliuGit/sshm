@@ -1,17 +1,18 @@
 package tui
 
 import (
-	"fmt"
+	"errors"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 )
 
-var menuItems = []string{"连接shell", "文件传输", "编辑连接", "删除连接"}
+var menuItems = []string{"Connect to shell", "File transfer", "Edit connection", "Delete connection"}
 
-const menuWidth = 15
+const menuWidth = 23
 
 type menuModel struct {
 	store      *repository.Store
@@ -57,7 +58,7 @@ func (m menuModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		switch m.selected {
 		case 0:
 			if m.store == nil {
-				return newShellError(fmt.Errorf("数据库未连接")), nil
+				return newShellError(errors.New(i18n.T("Database is not connected"))), nil
 			}
 			store, id := m.store, m.connection.id
 			return m, func() tea.Msg {
@@ -95,7 +96,7 @@ func (m shellErrorModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 
 // View 显示 Shell 错误及关闭提示。
 func (m shellErrorModel) View() string {
-	return formDialog("连接 Shell 失败", m.err, "Enter/Esc 关闭", plainStyle, formErrorStyle)
+	return formDialog(i18n.T("Failed to connect to shell"), m.err, i18n.T("Enter/Esc Close"), plainStyle, formErrorStyle)
 }
 
 // View 生成紧凑的圆角快捷菜单。
@@ -104,6 +105,7 @@ func (m menuModel) View() string {
 	edgeStyle := lipgloss.NewStyle().Foreground(selectedColor).Background(backgroundColor)
 	lines := make([]string, 0, len(menuItems))
 	for i, item := range menuItems {
+		item = i18n.T(item)
 		line := fit("   "+item, contentWidth)
 		if i == m.selected {
 			line = edgeStyle.Render("") + selectedStyle.Width(contentWidth-2).Render("› "+item) + edgeStyle.Render("")
@@ -144,7 +146,7 @@ func (m deleteConfirmModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		return nil, nil
 	case "y":
 		if m.store == nil {
-			m.err = "数据库未连接"
+			m.err = i18n.T("Database is not connected")
 			return m, nil
 		}
 		id := m.connection.id
@@ -162,7 +164,7 @@ type connectionDeleteFailedMsg struct{ err error }
 
 // View 显示待删除连接及确认快捷键。
 func (m deleteConfirmModel) View() string {
-	status := "y 确认 | n/Esc 取消"
+	status := i18n.T("y Confirm | n/Esc Cancel")
 	statusStyle := confirmStyle
 	titleStyle := modalTitleStyle
 	if m.err != "" {
@@ -170,5 +172,5 @@ func (m deleteConfirmModel) View() string {
 		statusStyle = formErrorStyle
 		titleStyle = formErrorStyle
 	}
-	return formDialog("删除连接", fmt.Sprintf("确认删除连接“%s”？", m.connection.name), status, statusStyle, titleStyle)
+	return formDialog(i18n.T("Delete connection"), i18n.T("Confirm deletion of connection %q?", m.connection.name), status, statusStyle, titleStyle)
 }

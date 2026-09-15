@@ -4,6 +4,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"sshm/internal/i18n"
 )
 
 var (
@@ -48,7 +50,7 @@ func (m transferModel) View() string {
 	}
 
 	lines = append(lines, transferSeparator(width))
-	footer := mutedStyle.Render("1/2: 切换 | y/p: 复制/粘贴 | a: 新建 | q/Esc: 关闭 | ?: 帮助")
+	footer := mutedStyle.Render(i18n.T("1/2: Switch | y/p: Copy/Paste | a: New | q/Esc: Close | ?: Help"))
 	lines = append(lines, transferRow(fit(" "+footer, contentWidth), contentWidth))
 	lines = append(lines, transferFrame(transferBorder.BottomLeft, transferBorder.Bottom, transferBorder.BottomRight, width))
 	view := strings.Join(lines, "\n")
@@ -65,9 +67,9 @@ func transferSize(terminalWidth, terminalHeight int) (int, int) {
 }
 
 func (m transferModel) renderHeader(width int) string {
-	label, labelStyle, tagColor := "本地", localTagStyle, localTagColor
+	label, labelStyle, tagColor := i18n.T("Local"), localTagStyle, localTagColor
 	if m.location == remoteSide {
-		label, labelStyle, tagColor = "远程", remoteTagStyle, remoteTagColor
+		label, labelStyle, tagColor = i18n.T("Remote"), remoteTagStyle, remoteTagColor
 	}
 	edgeStyle := lipgloss.NewStyle().Foreground(tagColor)
 	tag := edgeStyle.Render("") + labelStyle.Render(label) + edgeStyle.Render("")
@@ -135,21 +137,25 @@ func (m transferModel) renderDetails(width, height int) []string {
 	rows := make([]string, height)
 	values := []string{
 		"",
-		centeredSection("剪贴板", width),
+		centeredSection(i18n.T("Clipboard"), width),
 	}
 	if len(m.clipboard.entries) == 0 {
-		values = append(values, " 空")
+		values = append(values, i18n.T(" Empty"))
 	} else {
 		available := max(0, height-len(values)-3)
 		for _, entry := range m.clipboard.entries[:min(len(m.clipboard.entries), available)] {
-			values = append(values, " "+entry.name)
+			icon, style := "📄", fileStyle
+			if entry.dir {
+				icon, style = "📁", folderStyle
+			}
+			values = append(values, " "+style.Render(icon)+" "+entry.name)
 		}
 	}
 	for len(values) < height-3 {
 		values = append(values, "")
 	}
 	if len(values) <= height-3 {
-		values = append(values, "", centeredSection("状态", width), " "+m.status)
+		values = append(values, "", centeredSection(i18n.T("Status"), width), " "+m.status)
 	}
 	for i := range rows {
 		if i < len(values) {
@@ -162,7 +168,7 @@ func (m transferModel) renderDetails(width, height int) []string {
 }
 
 func (m transferModel) sortLabel() string {
-	name := map[byte]string{'n': "文件名", 's': "大小", 't': "修改时间"}[m.sortField]
+	name := map[byte]string{'n': i18n.T("File name"), 's': i18n.T("Size"), 't': i18n.T("Modified")}[m.sortField]
 	arrow := "↑"
 	if !m.sortAsc {
 		arrow = "↓"

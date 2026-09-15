@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"sshm/internal/i18n"
 )
 
 // ListConnections 返回数据库中的全部连接，按创建顺序读取；凭据密文不会被读取。
@@ -30,7 +32,7 @@ func (s *Store) ListConnections() ([]Connection, error) {
 // 调用方使用完凭据后必须立即清空返回的字节切片，避免明文长期驻留内存。
 func (s *Store) SSHConnection(id int64) (Connection, []byte, error) {
 	if id <= 0 {
-		return Connection{}, nil, errors.New("连接不存在")
+		return Connection{}, nil, errors.New(i18n.T("Connection does not exist"))
 	}
 	var c Connection
 	var nonce, ciphertext []byte
@@ -38,11 +40,11 @@ func (s *Store) SSHConnection(id int64) (Connection, []byte, error) {
 		FROM connections c JOIN credentials cr ON cr.id = c.credential_id WHERE c.id=?`, id).
 		Scan(&c.ID, &c.Name, &c.Host, &c.Port, &c.Username, &c.CredentialID, &c.Credential, &c.CredentialName, &c.UseCount, &c.LastUsedAt, &c.Remark, &nonce, &ciphertext)
 	if err != nil {
-		return Connection{}, nil, fmt.Errorf("读取连接凭据: %w", err)
+		return Connection{}, nil, fmt.Errorf("%s: %w", i18n.T("Failed to read connection credential"), err)
 	}
 	credential, err := s.Decrypt(nonce, ciphertext)
 	if err != nil {
-		return Connection{}, nil, fmt.Errorf("解密连接凭据: %w", err)
+		return Connection{}, nil, fmt.Errorf("%s: %w", i18n.T("Failed to decrypt connection credential"), err)
 	}
 	return c, credential, nil
 }
@@ -58,7 +60,7 @@ func (s *Store) MarkUsed(id int64) error {
 		return err
 	}
 	if updated == 0 {
-		return errors.New("连接不存在")
+		return errors.New(i18n.T("Connection does not exist"))
 	}
 	return nil
 }
@@ -66,30 +68,30 @@ func (s *Store) MarkUsed(id int64) error {
 // UpdateConnection 更新连接字段，并返回更新后的连接摘要。
 func (s *Store) UpdateConnection(id int64, input NewConnection) (Connection, error) {
 	if id <= 0 {
-		return Connection{}, errors.New("连接不存在")
+		return Connection{}, errors.New(i18n.T("Connection does not exist"))
 	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.Host = strings.TrimSpace(input.Host)
 	input.Username = strings.TrimSpace(input.Username)
 	input.Remark = strings.TrimSpace(input.Remark)
 	if input.Name == "" || input.Host == "" || input.Username == "" {
-		return Connection{}, errors.New("名称、主机和用户不能为空")
+		return Connection{}, errors.New(i18n.T("Name, host, and user are required"))
 	}
 	if input.Port < 1 || input.Port > 65535 {
-		return Connection{}, errors.New("端口必须在 1 到 65535 之间")
+		return Connection{}, errors.New(i18n.T("Port must be between 1 and 65535"))
 	}
 	if input.CredentialID <= 0 {
-		return Connection{}, errors.New("请选择凭据")
+		return Connection{}, errors.New(i18n.T("You must select a credential"))
 	}
 	var c Connection
 	if err := s.db.QueryRow("SELECT use_count,last_used_at FROM connections WHERE id=?", id).Scan(&c.UseCount, &c.LastUsedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return Connection{}, errors.New("连接不存在")
+			return Connection{}, errors.New(i18n.T("Connection does not exist"))
 		}
-		return Connection{}, fmt.Errorf("读取连接使用状态: %w", err)
+		return Connection{}, fmt.Errorf("%s: %w", i18n.T("Failed to read connection usage"), err)
 	}
 	if err := s.db.QueryRow(`SELECT cr.type, cr.name FROM credentials cr WHERE cr.id=?`, input.CredentialID).Scan(&c.Credential, &c.CredentialName); err != nil {
-		return Connection{}, fmt.Errorf("读取凭据: %w", err)
+		return Connection{}, fmt.Errorf("%s: %w", i18n.T("Failed to read credential"), err)
 	}
 	result, err := s.db.Exec(`UPDATE connections SET name=?,host=?,port=?,username=?,credential_id=?,remark=? WHERE id=?`, input.Name, input.Host, input.Port, input.Username, input.CredentialID, input.Remark, id)
 	if err != nil {
@@ -100,7 +102,7 @@ func (s *Store) UpdateConnection(id int64, input NewConnection) (Connection, err
 		return Connection{}, err
 	}
 	if updated == 0 {
-		return Connection{}, errors.New("连接不存在")
+		return Connection{}, errors.New(i18n.T("Connection does not exist"))
 	}
 	c.ID, c.Name, c.Host, c.Port, c.Username, c.CredentialID, c.Remark = id, input.Name, input.Host, input.Port, input.Username, input.CredentialID, input.Remark
 	return c, nil
@@ -109,7 +111,7 @@ func (s *Store) UpdateConnection(id int64, input NewConnection) (Connection, err
 // DeleteConnection 删除指定连接。
 func (s *Store) DeleteConnection(id int64) error {
 	if id <= 0 {
-		return errors.New("连接不存在")
+		return errors.New(i18n.T("Connection does not exist"))
 	}
 	result, err := s.db.Exec("DELETE FROM connections WHERE id=?", id)
 	if err != nil {
@@ -120,7 +122,7 @@ func (s *Store) DeleteConnection(id int64) error {
 		return err
 	}
 	if deleted == 0 {
-		return errors.New("连接不存在")
+		return errors.New(i18n.T("Connection does not exist"))
 	}
 	return nil
 }
@@ -132,13 +134,13 @@ func (s *Store) CreateConnection(input NewConnection) (Connection, error) {
 	input.Username = strings.TrimSpace(input.Username)
 	input.Remark = strings.TrimSpace(input.Remark)
 	if input.Name == "" || input.Host == "" || input.Username == "" {
-		return Connection{}, errors.New("名称、主机和用户不能为空")
+		return Connection{}, errors.New(i18n.T("Name, host, and user are required"))
 	}
 	if input.Port < 1 || input.Port > 65535 {
-		return Connection{}, errors.New("端口必须在 1 到 65535 之间")
+		return Connection{}, errors.New(i18n.T("Port must be between 1 and 65535"))
 	}
 	if input.CredentialID <= 0 {
-		return Connection{}, errors.New("请选择凭据")
+		return Connection{}, errors.New(i18n.T("You must select a credential"))
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -147,7 +149,7 @@ func (s *Store) CreateConnection(input NewConnection) (Connection, error) {
 	defer tx.Rollback()
 	var credentialType, credentialName string
 	if err := tx.QueryRow("SELECT type,name FROM credentials WHERE id=?", input.CredentialID).Scan(&credentialType, &credentialName); err != nil {
-		return Connection{}, fmt.Errorf("读取凭据: %w", err)
+		return Connection{}, fmt.Errorf("%s: %w", i18n.T("Failed to read credential"), err)
 	}
 	result, err := tx.Exec("INSERT INTO connections(name,host,port,username,credential_id,remark) VALUES(?,?,?,?,?,?)", input.Name, input.Host, input.Port, input.Username, input.CredentialID, input.Remark)
 	if err != nil {

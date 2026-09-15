@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 
+	"sshm/internal/i18n"
+
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/chacha20poly1305"
 )
@@ -41,7 +43,7 @@ func (s *Store) Decrypt(nonce, ciphertext []byte) ([]byte, error) {
 
 func validateMasterKey(salt, nonce, ciphertext []byte) error {
 	if len(salt) != saltSize || len(nonce) != chacha20poly1305.NonceSizeX || len(ciphertext) != keySize+chacha20poly1305.Overhead {
-		return errors.New("主密钥记录格式无效")
+		return errors.New(i18n.T("Invalid master key record"))
 	}
 	return nil
 }

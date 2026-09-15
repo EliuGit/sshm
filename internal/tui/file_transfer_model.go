@@ -12,6 +12,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 	ssh "sshm/internal/ssh"
 )
@@ -82,7 +83,7 @@ type transferModel struct {
 // newFileTransfer 创建文件传输弹窗并读取本地初始目录。
 func newTransfer(connection connectionRow, workingDir string, width, height int) transferModel {
 	search := newTransferInput()
-	search.Placeholder = "筛选文件..."
+	search.Placeholder = i18n.T("Filter files...")
 	address := newTransferInput()
 	address.CharLimit = 1000
 	m := transferModel{
@@ -96,13 +97,13 @@ func newTransfer(connection connectionRow, workingDir string, width, height int)
 		sortAsc:    true,
 		search:     search,
 		address:    address,
-		status:     "正在读取本地目录",
+		status:     i18n.T("Reading local directory"),
 	}
 	if m.localPath == "" {
 		var err error
 		m.localPath, err = os.Getwd()
 		if err != nil {
-			m.status = "读取当前工作目录失败：" + err.Error()
+			m.status = i18n.T("Failed to read current working directory: ") + err.Error()
 			return m
 		}
 	}
@@ -150,7 +151,7 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 			m.closeSFTP()
 			return nil, nil
 		}
-		m.status = "正在读取远程目录"
+		m.status = i18n.T("Reading remote directory")
 		return m, nil
 	}
 	if m.focus == addressFocus {
@@ -201,9 +202,9 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 	case "p":
 		m.pruneClipboard()
 		if len(m.clipboard.entries) == 0 {
-			m.status = "剪贴板为空"
+			m.status = i18n.T("Clipboard is empty")
 		} else if (m.location == remoteSide || m.clipboard.source == remoteSide) && m.sftp == nil {
-			m.status = "远程连接不可用"
+			m.status = i18n.T("Remote connection is unavailable")
 		} else {
 			return m.startPaste()
 		}
@@ -213,13 +214,13 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		m.openDelete()
 	case "r":
 		if m.location == remoteSide && m.sftp == nil {
-			m.status = "远程连接不可用"
+			m.status = i18n.T("Remote connection is unavailable")
 		} else {
 			return m, m.openRename()
 		}
 	case "a":
 		if m.location == remoteSide && m.sftp == nil {
-			m.status = "远程连接不可用"
+			m.status = i18n.T("Remote connection is unavailable")
 		} else {
 			return m, m.openCreate()
 		}
@@ -242,12 +243,12 @@ func (m transferModel) updateAddress(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 	case "enter":
 		target := strings.TrimSpace(m.address.Value())
 		if target == "" {
-			m.status = "路径不能为空"
+			m.status = i18n.T("Path is required")
 			return m, nil
 		}
 		if m.location == localSide {
 			if err := m.changeLocalDir(target); err != nil {
-				m.status = "跳转失败：" + err.Error()
+				m.status = i18n.T("Jump failed: ") + err.Error()
 				return m, nil
 			}
 		} else {
@@ -312,7 +313,7 @@ func (m *transferModel) switchLocation(location transferSide) tea.Cmd {
 	} else if m.sftp == nil {
 		cmd = m.connectRemote()
 	} else {
-		m.status = "远程目录已就绪"
+		m.status = i18n.T("Remote directory is ready")
 	}
 	m.cursor = min(cursor, max(0, len(m.visibleEntries())-1))
 	return cmd
@@ -326,7 +327,7 @@ func (m *transferModel) goParent() tea.Cmd {
 		return m.loadRemoteDir(path.Dir(current), child, false)
 	} else {
 		if err := m.changeLocalDir(filepath.Dir(current)); err != nil {
-			m.status = "返回上级失败：" + err.Error()
+			m.status = i18n.T("Failed to return to parent directory: ") + err.Error()
 			return nil
 		}
 		m.focusEntry(child)
@@ -340,14 +341,14 @@ func (m *transferModel) enterDirectory() tea.Cmd {
 		return nil
 	}
 	if entry.symlink {
-		m.status = "符号链接仅展示，不能进入"
+		m.status = i18n.T("Symbolic links cannot be opened")
 		return nil
 	}
 	if m.location == remoteSide {
 		return m.loadRemoteDir(path.Join(m.remotePath, entry.name), "", false)
 	} else {
 		if err := m.changeLocalDir(filepath.Join(m.localPath, entry.name)); err != nil {
-			m.status = "进入目录失败：" + err.Error()
+			m.status = i18n.T("Failed to change directory: ") + err.Error()
 		}
 		return nil
 	}
@@ -367,7 +368,7 @@ func (m *transferModel) toggleSelection() {
 
 func (m *transferModel) copySelection() {
 	if m.location == remoteSide && m.sftp == nil {
-		m.status = "远程连接不可用"
+		m.status = i18n.T("Remote connection is unavailable")
 		return
 	}
 	hadSelection := len(m.selected) > 0
@@ -377,16 +378,16 @@ func (m *transferModel) copySelection() {
 	}
 	for _, entry := range chosen {
 		if entry.symlink {
-			m.status = "符号链接不能复制"
+			m.status = i18n.T("Symbolic links cannot be copied from here")
 			return
 		}
 	}
 	if len(chosen) == 0 {
-		m.status = "没有可复制的项目"
+		m.status = i18n.T("No items to copy")
 		return
 	}
 	m.clipboard = transferClipboard{source: m.location, path: m.currentPath(), entries: chosen}
-	m.status = "复制：已加入剪贴板"
+	m.status = i18n.T("Copy: added to clipboard")
 }
 
 func (m *transferModel) toggleSort(field byte) {

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"sshm/internal/buildinfo"
+	"sshm/internal/i18n"
 )
 
 const (
@@ -36,7 +37,7 @@ var (
 func newSearchInput() textinput.Model {
 	input := textinput.New()
 	input.Prompt = ""
-	input.Placeholder = "搜索名称、主机、用户、备注..."
+	input.Placeholder = i18n.T("Search name, host, user, or remark...")
 	input.CharLimit = 200
 	styles := input.Styles()
 	styles.Focused.Text = plainStyle
@@ -60,7 +61,7 @@ func (m model) View() tea.View {
 
 func (m model) render() string {
 	if m.width < minWidth || m.height < minHeight {
-		return "终端窗口过小，请至少调整为 80×20"
+		return i18n.T("Terminal must be at least 80x20")
 	}
 	input := m.searchInput
 	if !m.searchReady {
@@ -116,7 +117,7 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 	connectionTable := newConnectionTable(leftWidth, visibleRows+1, tableSelected, !searchFocused, tableConnections, sortField, sortAsc)
 	tableLines := strings.Split(connectionTable.View(), "\n")
 	leftRows[mainStart] = tableLines[0]
-	rightRows[mainStart] = labelStyle.Render("详情")
+	rightRows[mainStart] = labelStyle.Render(i18n.T("Details"))
 	lineStyle := borderStyle
 	if !searchFocused {
 		lineStyle = accentStyle
@@ -136,19 +137,19 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 		}
 		connection := connections[selected]
 		detailRow := mainStart + 3
-		detailRow = setDetail(rightRows, detailRow, rightWidth, "名称：", connection.name)
-		detailRow = setDetail(rightRows, detailRow, rightWidth, "地址：", connection.username+"@"+connection.host+":"+connection.port)
-		detailRow = setDetail(rightRows, detailRow, rightWidth, "认证：", connection.auth)
-		detailRow = setDetail(rightRows, detailRow, rightWidth, "凭据：", connection.credName)
-		detailRow = setDetail(rightRows, detailRow, rightWidth, "上次使用：", connection.lastUsed)
-		setDetail(rightRows, detailRow, rightWidth, "备注：", connection.remark)
+		detailRow = setDetail(rightRows, detailRow, rightWidth, i18n.T("Name: "), connection.name)
+		detailRow = setDetail(rightRows, detailRow, rightWidth, i18n.T("Address: "), connection.username+"@"+connection.host+":"+connection.port)
+		detailRow = setDetail(rightRows, detailRow, rightWidth, i18n.T("Authentication: "), authLabel(connection.auth))
+		detailRow = setDetail(rightRows, detailRow, rightWidth, i18n.T("Credential: "), connection.credName)
+		detailRow = setDetail(rightRows, detailRow, rightWidth, i18n.T("Last used: "), connection.lastUsed)
+		setDetail(rightRows, detailRow, rightWidth, i18n.T("Remark: "), connection.remark)
 	}
 	for row := mainStart; row < footerLine-1; row++ {
 		put(row, mainRow(leftRows[row], rightRows[row]))
 	}
 
 	put(footerLine, borderStyle.Render(strings.Repeat("─", contentWidth)))
-	put(footerLine+1, mutedStyle.Render("Enter/l: 菜单 | a: 新增 | p: 凭据管理 | n/h/u: 排序 | ↑/k/↓/j: 滚动 | q: 退出 "))
+	put(footerLine+1, mutedStyle.Render(i18n.T("Enter/l: Menu | a: New | p: Credentials | n/h/u: Sort | Up/k/Down/j: Scroll | q: Quit ")))
 
 	result := make([]string, 0, height)
 	title := accentStyle.Render(" " + windowTitle + " ")
@@ -185,9 +186,9 @@ func newConnectionTable(width, height, selected int, focused bool, connections [
 	}
 	t := table.New(
 		table.WithColumns([]table.Column{
-			{Title: sortTitle(" 名称", 'n', sortField, sortAsc), Width: nameColumnWidth},
-			{Title: sortTitle("主机:端口", 'h', sortField, sortAsc), Width: width - nameColumnWidth - userColumnWidth},
-			{Title: sortTitle("用户", 'u', sortField, sortAsc), Width: userColumnWidth},
+			{Title: sortTitle(" "+i18n.T("Name"), 'n', sortField, sortAsc), Width: nameColumnWidth},
+			{Title: sortTitle(i18n.T("Host:Port"), 'h', sortField, sortAsc), Width: width - nameColumnWidth - userColumnWidth},
+			{Title: sortTitle(i18n.T("User"), 'u', sortField, sortAsc), Width: userColumnWidth},
 		}),
 		table.WithRows(rows),
 		table.WithWidth(width),

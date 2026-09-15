@@ -10,6 +10,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 )
 
@@ -37,8 +38,8 @@ type credentialPickerModel struct {
 
 func newCredentialPicker(store *repository.Store, parent connectionFormModel) credentialPickerModel {
 	searchInput := newSearchInput()
-	searchInput.Placeholder = "按 / 搜索凭据..."
-	searchInput.SetWidth(24)
+	searchInput.Placeholder = i18n.T("Search credentials with /...")
+	searchInput.SetWidth(30)
 	m := credentialPickerModel{store: store, parent: parent, selectable: true, searchInput: searchInput}
 	return m.reload()
 }
@@ -51,12 +52,12 @@ func newCredentialManager(store *repository.Store) credentialPickerModel {
 
 func (m credentialPickerModel) reload() credentialPickerModel {
 	if m.store == nil {
-		m.err = "数据库未连接"
+		m.err = i18n.T("Database is not connected")
 		return m
 	}
 	credentials, err := m.store.ListCredentials()
 	if err != nil {
-		m.err = "读取凭据列表失败：" + err.Error()
+		m.err = i18n.T("Failed to read credential list: ") + err.Error()
 		return m
 	}
 	m.credentials = credentials
@@ -176,7 +177,7 @@ func (m credentialPickerModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 	case "d":
 		if credential, ok := m.currentCredential(); ok {
 			if credential.ConnectionCount > 0 {
-				m.err = fmt.Sprintf("该凭据仍关联 %d 个连接，不能删除", credential.ConnectionCount)
+				m.err = i18n.T("Credential is used by %d connections; cannot delete", credential.ConnectionCount)
 			} else {
 				m.confirmDelete = true
 			}
@@ -198,7 +199,7 @@ func (m credentialPickerModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 func (m credentialPickerModel) View() string {
 	if m.confirmDelete {
 		credential, _ := m.currentCredential()
-		return formDialog("删除凭据", fmt.Sprintf("确认删除凭据“%s”？", credential.Name), "y 确认 | n/Esc 取消", confirmStyle, modalTitleStyle)
+		return formDialog(i18n.T("Delete credential"), i18n.T("Confirm deletion of credential %q?", credential.Name), i18n.T("y Confirm | n/Esc Cancel"), confirmStyle, modalTitleStyle)
 	}
 	titleStyle := modalTitleStyle
 	if m.err != "" {
@@ -209,7 +210,7 @@ func (m credentialPickerModel) View() string {
 		searchMarker = accentStyle.Render(">")
 	}
 	lines := []string{
-		titleStyle.Render("凭据管理"),
+		titleStyle.Render(i18n.T("Credentials")),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
 		"  " + searchMarker + " " + m.searchInput.View(),
 		"",
@@ -218,7 +219,7 @@ func (m credentialPickerModel) View() string {
 	start := max(0, m.selected-pickerRows+1)
 	end := min(len(credentials), start+pickerRows)
 	for i := start; i < end; i++ {
-		kind := map[string]string{"passwd": "密码", "key": "私钥"}[credentials[i].Type]
+		kind := authLabel(credentials[i].Type)
 		item := fmt.Sprintf("[%s] %s | %d", kind, credentials[i].Name, credentials[i].ConnectionCount)
 		prefix, style := "  ", plainStyle
 		if i == m.selected {
@@ -227,18 +228,18 @@ func (m credentialPickerModel) View() string {
 		lines = append(lines, fit(style.Render(prefix+item), modalContentWidth))
 	}
 	if len(credentials) == 0 {
-		lines = append(lines, mutedStyle.Render("  无匹配凭据"))
+		lines = append(lines, mutedStyle.Render("  "+i18n.T("No matching credentials")))
 	}
 	for len(lines) < pickerRows+4 {
 		lines = append(lines, "")
 	}
-	status := "a 新增 | e 编辑 | d 删除 | Esc 返回"
+	status := i18n.T("a New | e Edit | d Delete | Esc Back")
 	if m.selectable {
-		status = "Enter 选择 | " + status
+		status = i18n.T("Enter Select | ") + status
 	}
 	statusStyle := mutedStyle
 	if m.searchFocused {
-		status = "Enter 完成 | Esc 清除"
+		status = i18n.T("Enter Done | Esc Clear")
 	}
 	if m.err != "" {
 		status = m.err
@@ -269,14 +270,14 @@ type credentialFormModel struct {
 
 func newCredentialForm(manager credentialPickerModel, credential *repository.Credential) credentialFormModel {
 	credentialType := "passwd"
-	name := newFormInput("用于识别和复用", 24)
-	password := newFormInput("SSH 登录密码", 20)
+	name := newFormInput(i18n.T("Use for identification and reuse"), 24)
+	password := newFormInput(i18n.T("SSH login password"), 20)
 	privateKey := newKeyInput()
 	if credential != nil {
 		credentialType = credential.Type
 		name.SetValue(credential.Name)
-		password.Placeholder = "留空则保留原密码"
-		privateKey.Placeholder = "留空则保留原私钥"
+		password.Placeholder = i18n.T("leave empty to keep the existing password")
+		privateKey.Placeholder = i18n.T("leave empty to keep the existing private key")
 	}
 	m := credentialFormModel{
 		manager: manager, credential: credential, credentialType: credentialType,
@@ -291,11 +292,11 @@ func newCredentialForm(manager credentialPickerModel, credential *repository.Cre
 func newKeyInput() textarea.Model {
 	input := textarea.New()
 	input.Prompt = ""
-	input.Placeholder = "粘贴 OpenSSH / PEM 私钥内容"
+	input.Placeholder = i18n.T("Paste an OpenSSH / PEM private key")
 	input.ShowLineNumbers = false
 	input.EndOfBufferCharacter = ' '
 	input.CharLimit = 64 * 1024
-	input.SetWidth(40)
+	input.SetWidth(33)
 	input.SetHeight(5)
 	styles := input.Styles()
 	styles.Focused.Text = plainStyle
@@ -417,17 +418,17 @@ func (m credentialFormModel) save() (modalModel, tea.Cmd) {
 	}
 	if strings.TrimSpace(m.name.Value()) == "" {
 		clear(content)
-		m.err = "凭据名称不能为空"
+		m.err = i18n.T("Credential name is required")
 		return m, nil
 	}
 	if m.credential == nil && len(bytes.TrimSpace(content)) == 0 {
 		clear(content)
-		m.err = "新增凭据的密码或私钥不能为空"
+		m.err = i18n.T("Password or private key is required")
 		return m, nil
 	}
 	if m.manager.store == nil {
 		clear(content)
-		m.err = "数据库未连接"
+		m.err = i18n.T("Database is not connected")
 		return m, nil
 	}
 	name, credentialType := m.name.Value(), m.credentialType
@@ -451,14 +452,14 @@ func (m credentialFormModel) save() (modalModel, tea.Cmd) {
 }
 
 func (m credentialFormModel) View() string {
-	title := "新增凭据"
+	title := i18n.T("New credential")
 	if m.credential != nil {
-		title = "编辑凭据"
+		title = i18n.T("Edit credential")
 	}
 	lines := []string{
 		modalTitleStyle.Render(title),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
-		m.inputRow("名称", m.name.View(), credentialNameField),
+		m.inputRow(i18n.T("Name"), m.name.View(), credentialNameField),
 		"",
 		m.typeRow(),
 		"",
@@ -466,15 +467,15 @@ func (m credentialFormModel) View() string {
 	if m.credentialType == "key" {
 		lines = append(lines, m.privateKeyRow())
 	} else {
-		lines = append(lines, m.inputRow("密码", m.password.View(), credentialContentField))
+		lines = append(lines, m.inputRow(i18n.T("Password"), m.password.View(), credentialContentField))
 	}
-	status := "←/→ 选择类型 | Ctrl+S 保存 | Esc 返回"
+	status := i18n.T("Left/Right: Select type | Ctrl+S: Save | Esc: Back")
 	statusStyle := mutedStyle
 	if m.err != "" {
 		status = m.err
 		statusStyle = formErrorStyle
 	} else if m.saving {
-		status = "正在加密并保存..."
+		status = i18n.T("Encrypting and saving...")
 		statusStyle = accentStyle
 	}
 	lines = append(lines, borderStyle.Render(strings.Repeat("─", modalContentWidth)), statusStyle.Render(status))
@@ -495,7 +496,7 @@ func (m credentialFormModel) typeRow() string {
 	if m.focus == credentialTypeField {
 		labelStyle = formActiveLabel
 	}
-	label := "类型"
+	label := i18n.T("Type")
 	if m.focus == credentialTypeField {
 		label += " >"
 	}
@@ -505,12 +506,12 @@ func (m credentialFormModel) typeRow() string {
 	} else {
 		keyStyle = formChoiceSelected
 	}
-	return "  " + labelStyle.Render(label) + passwordStyle.Render("密码") + keyStyle.Render("私钥")
+	return "  " + labelStyle.Render(label) + passwordStyle.Render(i18n.T("Password")) + keyStyle.Render(i18n.T("Private key"))
 }
 
 func (m credentialFormModel) privateKeyRow() string {
 	labelStyle, inputStyle := formLabelStyle, formInputStyle
-	label := "私钥"
+	label := i18n.T("Private key")
 	if m.focus == credentialContentField {
 		labelStyle, inputStyle = formActiveLabel, formInputFocused
 		label += " >"

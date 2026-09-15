@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 )
 
@@ -22,7 +23,7 @@ type passwordChangeFailedMsg struct{ err error }
 
 func passwordErrorMessage(err error) string {
 	if errors.Is(err, repository.ErrInvalidPassword) {
-		return "密码不正确"
+		return i18n.T("Password is incorrect")
 	}
 	return err.Error()
 }
@@ -38,7 +39,7 @@ type passwordFormModel struct {
 
 func newPasswordForm(changePassword func([]byte, []byte) (*repository.Store, error)) passwordFormModel {
 	m := passwordFormModel{changePassword: changePassword}
-	placeholders := [...]string{"当前应用密码", "新的应用密码", "再次输入新密码"}
+	placeholders := [...]string{i18n.T("Current application password"), i18n.T("New application password"), i18n.T("Repeat the new password")}
 	for i := range m.inputs {
 		m.inputs[i] = newFormInput(placeholders[i], 0)
 		m.inputs[i].EchoMode = textinput.EchoPassword
@@ -95,11 +96,11 @@ func (m passwordFormModel) save() (modalModel, tea.Cmd) {
 	oldPassword := m.inputs[oldPasswordField].Value()
 	newPassword := m.inputs[newPasswordField].Value()
 	if oldPassword == "" || newPassword == "" || m.inputs[repeatPasswordField].Value() == "" {
-		m.err = "原密、新密和重复不能为空"
+		m.err = i18n.T("All password fields are required")
 		return m, nil
 	}
 	if newPassword != m.inputs[repeatPasswordField].Value() {
-		m.err = "新密与重复不一致"
+		m.err = i18n.T("New passwords do not match")
 		return m, nil
 	}
 	oldBytes, newBytes := []byte(oldPassword), []byte(newPassword)
@@ -117,21 +118,21 @@ func (m passwordFormModel) save() (modalModel, tea.Cmd) {
 }
 
 func (m passwordFormModel) View() string {
-	labels := [...]string{"原密", "新密", "重复"}
+	labels := [...]string{i18n.T("current"), i18n.T("new"), i18n.T("repeat")}
 	lines := []string{
-		modalTitleStyle.Render("修改应用密码"),
+		modalTitleStyle.Render(i18n.T("Change application password")),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
 	}
 	for i, label := range labels {
 		lines = append(lines, m.inputRow(label, m.inputs[i].View(), i), "")
 	}
 	lines = append(lines[:len(lines)-1], borderStyle.Render(strings.Repeat("─", modalContentWidth)))
-	status := "Ctrl+S: 保存 | Esc: 取消"
+	status := i18n.T("Ctrl+S: Save | Esc: Cancel")
 	style := mutedStyle
 	if m.err != "" {
 		status, style = m.err, formErrorStyle
 	} else if m.saving {
-		status, style = "正在修改...", accentStyle
+		status, style = i18n.T("Changing..."), accentStyle
 	}
 	return modalStyle.Render(strings.Join(append(lines, style.Render(status)), "\n"))
 }

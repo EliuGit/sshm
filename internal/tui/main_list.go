@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 )
 
@@ -17,12 +18,31 @@ type connectionRow struct {
 }
 
 func rowFromConnection(c repository.Connection) connectionRow {
-	auth := map[string]string{"passwd": "密码", "key": "私钥"}[c.Credential]
 	lastUsed := ""
 	if c.LastUsedAt.Valid {
 		lastUsed = time.Unix(c.LastUsedAt.Int64, 0).Format("2006-01-02 15:04")
 	}
-	return connectionRow{id: c.ID, name: c.Name, host: c.Host, port: fmt.Sprint(c.Port), username: c.Username, auth: auth, credID: c.CredentialID, credName: c.CredentialName, lastUsed: lastUsed, remark: c.Remark, useCount: c.UseCount}
+	return connectionRow{id: c.ID, name: c.Name, host: c.Host, port: fmt.Sprint(c.Port), username: c.Username, auth: authLabel(c.Credential), credID: c.CredentialID, credName: c.CredentialName, lastUsed: lastUsed, remark: c.Remark, useCount: c.UseCount}
+}
+
+func authLabel(auth string) string {
+	if auth == "passwd" || auth == "密码" {
+		return i18n.T("Password")
+	}
+	if auth == "key" || auth == "私钥" {
+		return i18n.T("Private key")
+	}
+	return auth
+}
+
+func authCode(auth string) string {
+	if auth == "密码" || auth == i18n.T("Password") {
+		return "passwd"
+	}
+	if auth == "私钥" || auth == i18n.T("Private key") {
+		return "key"
+	}
+	return auth
 }
 
 // visibleConnections 按当前搜索词过滤，并仅对当前选中的字段做稳定排序。

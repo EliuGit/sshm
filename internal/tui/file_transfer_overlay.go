@@ -8,6 +8,8 @@ import (
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
+
+	"sshm/internal/i18n"
 )
 
 // overlayKind 表示文件传输弹窗当前显示的内部覆盖层。
@@ -53,7 +55,7 @@ type transferOverlay struct {
 func (m *transferModel) openDelete() {
 	entries := m.operationEntries()
 	if len(entries) == 0 {
-		m.status = "没有可删除的项目"
+		m.status = i18n.T("No items to delete")
 		return
 	}
 	paths := make([]string, len(entries))
@@ -70,7 +72,7 @@ func (m *transferModel) openDelete() {
 func (m *transferModel) openRename() tea.Cmd {
 	entry, ok := m.currentEntry()
 	if !ok {
-		m.status = "没有可重命名的项目"
+		m.status = i18n.T("No item to rename")
 		return nil
 	}
 	input := newTransferInput()
@@ -138,10 +140,10 @@ func (m transferModel) handleOverlay(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 			m.overlay = transferOverlay{}
 			clear(m.selected)
 			if err := m.refreshLocal(); err != nil {
-				m.status = fmt.Sprintf("已将 %s 重命名为 %s，但刷新失败：%v", oldName, newName, err)
+				m.status = i18n.T("Failed to refresh after renaming %s to %s: %v", oldName, newName, err)
 			} else {
 				m.focusEntry(newName)
-				m.status = fmt.Sprintf("已将 %s 重命名为 %s", oldName, newName)
+				m.status = i18n.T("Renamed %s to %s", oldName, newName)
 			}
 		default:
 			var cmd tea.Cmd
@@ -182,8 +184,8 @@ func (m transferModel) handleOverlay(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 func (m transferModel) renderOverlay() string {
 	switch m.overlay.kind {
 	case overlayDelete:
-		body := strings.Join(append([]string{"确定要删除以下项目："}, m.overlay.deletePaths...), "\n")
-		return formDialog("删除文件", body, "y 确认 | n/Esc 取消", confirmStyle, modalTitleStyle)
+		body := strings.Join(append([]string{i18n.T("Confirm deletion of the following items:")}, m.overlay.deletePaths...), "\n")
+		return formDialog(i18n.T("Delete files"), body, i18n.T("y Confirm | n/Esc Cancel"), confirmStyle, modalTitleStyle)
 	case overlayProgress:
 		return m.renderProgress()
 	case overlayRename:
@@ -193,7 +195,7 @@ func (m transferModel) renderOverlay() string {
 		if m.overlay.error != "" {
 			body += "\n" + formErrorStyle.Render(m.overlay.error)
 		}
-		return formDialog("重命名", body, "Enter 确认 | Ctrl+C 清空 | Esc 取消", mutedStyle, modalTitleStyle)
+		return formDialog(i18n.T("Rename"), body, i18n.T("Enter Confirm | Ctrl+C Clear | Esc Cancel"), mutedStyle, modalTitleStyle)
 	case overlayCreate:
 		input := m.overlay.renameInput
 		input.SetWidth(modalContentWidth - 2)
@@ -201,23 +203,23 @@ func (m transferModel) renderOverlay() string {
 		if m.overlay.error != "" {
 			body += "\n" + formErrorStyle.Render(m.overlay.error)
 		}
-		return formDialog("新建文件夹", body, "Enter 确认 | Ctrl+C 清空 | Esc 取消", mutedStyle, modalTitleStyle)
+		return formDialog(i18n.T("New folder"), body, i18n.T("Enter Confirm | Ctrl+C Clear | Esc Cancel"), mutedStyle, modalTitleStyle)
 	case overlayHelp:
 		item := func(shortcut, description string) string {
 			return plainStyle.Render(shortcut) + mutedStyle.Render(" "+description)
 		}
 		separator := mutedStyle.Render(" | ")
 		body := strings.Join([]string{
-			item("1/2", "切换本地/远程") + separator + item("↑/↓、j/k", "移动"),
-			item("h/Backspace", "返回上级") + separator + item("l/Enter", "进入目录"),
-			item("Space", "多选") + separator + item("y/p", "复制/粘贴"),
-			item("/", "筛选") + separator + item("Ctrl+G", "跳转"),
-			item("n/s/t", "按名称/大小/时间排序"),
-			item("d", "删除") + separator + item("r", "重命名"),
-			item("a", "新建文件夹"),
-			item("Ctrl+C", "清空/取消") + separator + item("q/Esc", "关闭/返回"),
+			item("1/2", i18n.T("Switch local/remote")) + separator + item(i18n.T("Up/Down, j/k"), i18n.T("Move")),
+			item("h/Backspace", i18n.T("Go to parent")) + separator + item("l/Enter", i18n.T("Open directory")),
+			item("Space", i18n.T("Select multiple")) + separator + item("y/p", i18n.T("Copy/Paste")),
+			item("/", i18n.T("Filter")) + separator + item("Ctrl+G", i18n.T("Go to path")),
+			item("n/s/t", i18n.T("Sort by name/size/time")),
+			item("d", i18n.T("Delete")) + separator + item("r", i18n.T("Rename")),
+			item("a", i18n.T("New folder")),
+			item("Ctrl+C", i18n.T("Clear/Cancel")) + separator + item("q/Esc", i18n.T("Close/Back")),
 		}, "\n")
-		return formDialog("文件传输帮助", body, "?/Esc 关闭帮助", mutedStyle, modalTitleStyle)
+		return formDialog(i18n.T("File transfer help"), body, i18n.T("?/Esc Close help"), mutedStyle, modalTitleStyle)
 	default:
 		return ""
 	}
@@ -227,7 +229,7 @@ func (m transferModel) renderOverlay() string {
 func (m transferModel) renderProgress() string {
 	const progressWidth = 32
 
-	title := m.overlay.operation + "中"
+	title := i18n.T("%s in progress", m.overlay.operation)
 	totalItems := max(1, m.overlay.totalItems)
 	itemIndex := max(1, m.overlay.itemIndex)
 	percent := 0
@@ -242,36 +244,36 @@ func (m transferModel) renderProgress() string {
 	body := []string{
 		plainStyle.Render(m.overlay.item),
 		bar,
-		mutedStyle.Render(fmt.Sprintf("%d / %d 项 · %s / %s", itemIndex, totalItems, formatSize(m.overlay.processedBytes), formatSize(m.overlay.totalBytes))),
+		mutedStyle.Render(i18n.T("%d / %d items · %s / %s", itemIndex, totalItems, formatSize(m.overlay.processedBytes), formatSize(m.overlay.totalBytes))),
 	}
-	footer := "Ctrl+C 取消"
+	footer := i18n.T("Ctrl+C Cancel")
 	statusStyle := mutedStyle
 	titleStyle := modalTitleStyle
 
 	switch m.overlay.progress {
 	case progressConnecting:
-		title = "连接中"
-		body = []string{plainStyle.Render(m.overlay.item), mutedStyle.Render("正在建立远程连接…")}
+		title = i18n.T("Connecting")
+		body = []string{plainStyle.Render(m.overlay.item), mutedStyle.Render(i18n.T("Connecting to the remote server..."))}
 	case progressCompleted:
-		title = "已完成"
+		title = i18n.T("Finished")
 		body = []string{
 			plainStyle.Render(m.overlay.item),
 			accentStyle.Render(strings.Repeat("█", progressWidth)) + plainStyle.Render(" 100%"),
-			mutedStyle.Render(fmt.Sprintf("%d / %d 项 · %s / %s", totalItems, totalItems, formatSize(m.overlay.totalBytes), formatSize(m.overlay.totalBytes))),
+			mutedStyle.Render(i18n.T("%d / %d items · %s / %s", totalItems, totalItems, formatSize(m.overlay.totalBytes), formatSize(m.overlay.totalBytes))),
 		}
-		footer = "Enter/Esc 关闭"
+		footer = i18n.T("Enter/Esc Close")
 	case progressCancelled:
-		title = "已取消"
-		footer = "Enter/Esc 关闭"
+		title = i18n.T("Canceled")
+		footer = i18n.T("Enter/Esc Close")
 	case progressFailed:
-		title = "失败"
+		title = i18n.T("Failed")
 		body = []string{plainStyle.Render(m.overlay.item), formErrorStyle.Render(m.overlay.error)}
-		footer = "Enter/Esc 关闭"
+		footer = i18n.T("Enter/Esc Close")
 		statusStyle = formErrorStyle
 		titleStyle = formErrorStyle
 	}
 	if m.overlay.cancelRequested && m.overlay.progress == progressRunning {
-		footer = "正在取消…"
+		footer = i18n.T("Canceling...")
 	}
 
 	return formDialog(title, strings.Join(body, "\n"), footer, statusStyle, titleStyle)

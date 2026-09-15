@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"sshm/internal/i18n"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -37,7 +39,7 @@ func Inspect(path string) (Status, error) {
 	}
 	if n == 0 {
 		if version != 0 {
-			return 0, fmt.Errorf("不支持的数据库版本: %d", version)
+			return 0, errors.New(i18n.T("Unsupported database version: %d", version))
 		}
 		if err = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&n); err != nil {
 			return 0, err
@@ -45,10 +47,10 @@ func Inspect(path string) (Status, error) {
 		if n == 0 {
 			return Uninitialized, nil
 		}
-		return 0, errors.New("数据库不是 SSHM 新版格式")
+		return 0, errors.New(i18n.T("Invalid SSHM database format"))
 	}
 	if version != 1 {
-		return 0, fmt.Errorf("不支持的数据库版本: %d", version)
+		return 0, errors.New(i18n.T("Unsupported database version: %d", version))
 	}
 	if err = db.QueryRow("SELECT count(*) FROM master_key WHERE id=1").Scan(&n); err != nil {
 		return 0, err
@@ -69,7 +71,7 @@ func Inspect(path string) (Status, error) {
 // Initialize 创建新数据库并用主密码封装随机数据密钥。
 func Initialize(path string, password []byte) (*Store, error) {
 	if len(password) == 0 {
-		return nil, errors.New("主密码不能为空")
+		return nil, errors.New(i18n.T("Master password is required"))
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
@@ -145,7 +147,7 @@ func (s *Store) ChangePassword(oldPassword, newPassword []byte) error {
 		return ErrInvalidPassword
 	}
 	if len(newPassword) == 0 {
-		return errors.New("新密码不能为空")
+		return errors.New(i18n.T("New password is required"))
 	}
 	var salt, nonce, ciphertext []byte
 	if err := s.db.QueryRow("SELECT kdf_salt, nonce, encrypted_data_key FROM master_key WHERE id=1").Scan(&salt, &nonce, &ciphertext); err != nil {
@@ -160,7 +162,7 @@ func (s *Store) ChangePassword(oldPassword, newPassword []byte) error {
 	}
 	defer clear(dataKey)
 	if !bytes.Equal(dataKey, s.dataKey) {
-		return errors.New("主密钥与当前会话不一致")
+		return errors.New(i18n.T("Master key mismatch"))
 	}
 	salt, nonce, ciphertext, err = sealDataKey(newPassword, s.dataKey)
 	if err != nil {

@@ -3,11 +3,12 @@ package ssh
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"path"
 	"path/filepath"
+
+	"sshm/internal/i18n"
 )
 
 const transferBufferSize = 256 * 1024
@@ -25,11 +26,11 @@ func (c *SFTP) Size(ctx context.Context, remotePath string) (int64, error) {
 		return 0, err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return 0, fmt.Errorf("符号链接 %s 不支持文件操作", info.Name())
+		return 0, errors.New(i18n.T("Symbolic link %s cannot be used for file operations", info.Name()))
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return 0, fmt.Errorf("不支持的文件类型：%s", info.Name())
+			return 0, errors.New(i18n.T("Unsupported file type: %s", info.Name()))
 		}
 		return info.Size(), nil
 	}
@@ -58,11 +59,11 @@ func (c *SFTP) Upload(ctx context.Context, localPath, remotePath string, progres
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("符号链接 %s 不支持上传", info.Name())
+		return errors.New(i18n.T("Symbolic link %s cannot be uploaded", info.Name()))
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持的文件类型：%s", info.Name())
+			return errors.New(i18n.T("Unsupported file type: %s", info.Name()))
 		}
 		return c.uploadFile(ctx, localPath, remotePath, progress)
 	}
@@ -96,11 +97,11 @@ func (c *SFTP) Download(ctx context.Context, remotePath, localPath string, progr
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("符号链接 %s 不支持下载", info.Name())
+		return errors.New(i18n.T("Symbolic link %s cannot be downloaded", info.Name()))
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持的文件类型：%s", info.Name())
+			return errors.New(i18n.T("Unsupported file type: %s", info.Name()))
 		}
 		return c.downloadFile(ctx, remotePath, localPath, info.Mode(), progress)
 	}
@@ -134,11 +135,11 @@ func (c *SFTP) Copy(ctx context.Context, source, target string, progress Progres
 		return err
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("符号链接 %s 不支持复制", info.Name())
+		return errors.New(i18n.T("Symbolic link %s cannot be copied", info.Name()))
 	}
 	if !info.IsDir() {
 		if !info.Mode().IsRegular() {
-			return fmt.Errorf("不支持的文件类型：%s", info.Name())
+			return errors.New(i18n.T("Unsupported file type: %s", info.Name()))
 		}
 		return c.copyFile(ctx, source, target, progress)
 	}

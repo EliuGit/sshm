@@ -8,11 +8,12 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 )
 
 // ErrInitializationCanceled 表示用户在初始化或解锁界面主动退出。
-var ErrInitializationCanceled = errors.New("初始化已取消")
+var ErrInitializationCanceled = errors.New("initialization canceled")
 
 // initializeMode 区分首次设置密码和已有数据库解锁。
 type initializeMode uint8
@@ -77,7 +78,7 @@ func newApplicationModel(path string, status repository.Status, savedPassword st
 			main, loadErr := newModel(store)
 			if loadErr != nil {
 				_ = store.Close()
-				return applicationModel{result: fmt.Errorf("读取连接列表: %w", loadErr)}
+				return applicationModel{result: fmt.Errorf("%s: %w", i18n.T("Failed to read connection list"), loadErr)}
 			}
 			return applicationModel{main: &main}
 		}
@@ -85,7 +86,7 @@ func newApplicationModel(path string, status repository.Status, savedPassword st
 			return applicationModel{initializing: initializeModel{path: path, mode: initializeUnlock, err: err.Error()}, result: err}
 		}
 		m := newInitializeModel(path, initializeUnlock)
-		m.err = "环境变量中的密码不正确，请手动输入"
+		m.err = i18n.T("Environment password is incorrect; enter it manually")
 		return applicationModel{initializing: m}
 	}
 	mode := initializeUnlock
@@ -122,7 +123,7 @@ func (m applicationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		main, err := newModel(m.initializing.store)
 		if err != nil {
 			_ = m.initializing.store.Close()
-			m.result = fmt.Errorf("读取连接列表: %w", err)
+			m.result = fmt.Errorf("%s: %w", i18n.T("Failed to read connection list"), err)
 			return m, tea.Quit
 		}
 		main.width, main.height = m.initializing.width, m.initializing.height
@@ -141,12 +142,12 @@ func (m applicationModel) View() tea.View {
 
 func newInitializeModel(path string, mode initializeMode) initializeModel {
 	m := initializeModel{path: path, mode: mode}
-	m.password = newFormInput("应用密码", 16)
+	m.password = newFormInput(i18n.T("Application password"), 16)
 	m.password.EchoMode = textinput.EchoPassword
 	m.password.EchoCharacter = '•'
 	m.password.Focus()
 	if mode == initializeNew {
-		m.repeat = newFormInput("再次输入密码", 16)
+		m.repeat = newFormInput(i18n.T("Enter application password again"), 16)
 		m.repeat.EchoMode = textinput.EchoPassword
 		m.repeat.EchoCharacter = '•'
 	}
@@ -245,16 +246,16 @@ func (m *initializeModel) focusedInput() *textinput.Model {
 func (m initializeModel) submit() (tea.Model, tea.Cmd) {
 	password := m.password.Value()
 	if password == "" {
-		m.err = "密码不能为空"
+		m.err = i18n.T("Password is required")
 		return m, nil
 	}
 	if m.mode == initializeNew {
 		if m.repeat.Value() == "" {
-			m.err = "重复密码不能为空"
+			m.err = i18n.T("Repeat password is required")
 			return m, nil
 		}
 		if password != m.repeat.Value() {
-			m.err = "两次输入的密码不一致"
+			m.err = i18n.T("Passwords do not match")
 			return m, nil
 		}
 	}
@@ -296,9 +297,9 @@ func (m initializeModel) finish(err error) (tea.Model, tea.Cmd) {
 }
 
 func (m initializeModel) View() tea.View {
-	title := "初始化应用"
+	title := i18n.T("Initialize application")
 	if m.mode == initializeUnlock {
-		title = "解锁"
+		title = i18n.T("Unlock")
 	}
 	body := m.viewBody(title)
 	if m.modal != nil {
@@ -318,9 +319,9 @@ func (m initializeModel) View() tea.View {
 }
 
 func (m initializeModel) viewBody(title string) string {
-	status := "Enter/Ctrl+S: 确定 | Esc: 退出"
+	status := i18n.T("Enter/Ctrl+S: Confirm | Esc: Quit")
 	if m.mode == initializeUnlock {
-		status = "Enter: 解锁 | Ctrl+P: 修改密码 | Esc: 退出"
+		status = i18n.T("Enter: Unlock | Ctrl+P: Change | Esc: Quit")
 	}
 	style := mutedStyle
 	if m.err != "" {
@@ -334,13 +335,13 @@ func (m initializeModel) viewBody(title string) string {
 	if m.repeat.Focused() {
 		repeatStyle = formInputFocused
 	}
-	passwordLabelStyle, passwordLabel := formLabelStyle, "密码"
+	passwordLabelStyle, passwordLabel := formLabelStyle, i18n.T("Password")
 	if m.password.Focused() {
-		passwordLabelStyle, passwordLabel = formActiveLabel, "密码 >"
+		passwordLabelStyle, passwordLabel = formActiveLabel, i18n.T("Password")+" >"
 	}
-	repeatLabelStyle, repeatLabel := formLabelStyle, "重复"
+	repeatLabelStyle, repeatLabel := formLabelStyle, i18n.T("Repeat")
 	if m.repeat.Focused() {
-		repeatLabelStyle, repeatLabel = formActiveLabel, "重复 >"
+		repeatLabelStyle, repeatLabel = formActiveLabel, i18n.T("Repeat")+" >"
 	}
 	passwordRow := passwordStyle.Render(m.password.View())
 	if m.mode == initializeNew {

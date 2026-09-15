@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"sshm/internal/i18n"
 	"sshm/internal/repository"
 	ssh "sshm/internal/ssh"
 
@@ -67,7 +68,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		for i := range m.connections {
 			if m.connections[i].credID == saved.credential.ID {
 				m.connections[i].credName = saved.credential.Name
-				m.connections[i].auth = map[string]string{"passwd": "密码", "key": "私钥"}[saved.credential.Type]
+				m.connections[i].auth = authLabel(saved.credential.Type)
 			}
 		}
 	}
@@ -83,7 +84,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Exec(shell, func(err error) tea.Msg {
 			if err == nil {
 				if markErr := store.MarkUsed(id); markErr != nil {
-					err = fmt.Errorf("记录连接使用状态: %w", markErr)
+					err = fmt.Errorf("%s: %w", i18n.T("Failed to record connection usage"), markErr)
 				}
 			}
 			return shellFinishedMsg{connectionID: id, err: err}
