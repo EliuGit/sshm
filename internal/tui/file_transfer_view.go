@@ -7,12 +7,13 @@ import (
 )
 
 var (
-	localTagStyle      = lipgloss.NewStyle().Background(lipgloss.Color("#1473E6")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
-	remoteTagStyle     = lipgloss.NewStyle().Background(lipgloss.Color("#7F5AF0")).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
+	localTagColor      = lipgloss.Color("#1473E6")
+	remoteTagColor     = lipgloss.Color("#7F5AF0")
+	localTagStyle      = lipgloss.NewStyle().Background(localTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
+	remoteTagStyle     = lipgloss.NewStyle().Background(remoteTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
 	folderStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
 	fileStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
 	selectedMarkStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#007ea1")).Foreground(lipgloss.Color("#00b3e4"))
-	copiedMarkStyle    = lipgloss.NewStyle().Background(lipgloss.Color("#2E7D32")).Foreground(lipgloss.Color("#00b3e4"))
 	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4e9af1ff"))
 )
 
@@ -64,11 +65,12 @@ func transferSize(terminalWidth, terminalHeight int) (int, int) {
 }
 
 func (m transferModel) renderHeader(width int) string {
-	label, labelStyle := "本地", localTagStyle
+	label, labelStyle, tagColor := "本地", localTagStyle, localTagColor
 	if m.location == remoteSide {
-		label, labelStyle = "远程", remoteTagStyle
+		label, labelStyle, tagColor = "远程", remoteTagStyle, remoteTagColor
 	}
-	tag := labelStyle.Render(label)
+	edgeStyle := lipgloss.NewStyle().Foreground(tagColor)
+	tag := edgeStyle.Render("") + labelStyle.Render(label) + edgeStyle.Render("")
 	remaining := max(1, width-lipgloss.Width(tag)-2)
 	address := m.currentPath()
 	marker := ""
@@ -108,17 +110,12 @@ func (m transferModel) renderList(width, height int) []string {
 			cursor = accentStyle.Render(">") + " "
 		}
 		_, selected := m.selected[entry.name]
-		clipboardEntry := m.isClipboardEntry(entry.name)
-		if selected || clipboardEntry {
-			markerStyle := selectedMarkStyle
-			if clipboardEntry {
-				markerStyle = copiedMarkStyle
-			}
+		if selected {
 			marker := " "
 			if focused {
 				marker = ">"
 			}
-			cursor = markerStyle.Render(marker) + " "
+			cursor = selectedMarkStyle.Render(marker) + " "
 		}
 		iconText, iconStyle := "📄", fileStyle
 		if entry.dir {
@@ -152,7 +149,7 @@ func (m transferModel) renderDetails(width, height int) []string {
 		values = append(values, "")
 	}
 	if len(values) <= height-3 {
-		values = append(values, "", transferSection("状态", width), " "+m.status)
+		values = append(values, "", centeredSection("状态", width), " "+m.status)
 	}
 	for i := range rows {
 		if i < len(values) {
@@ -173,16 +170,11 @@ func (m transferModel) sortLabel() string {
 	return name + " " + arrow
 }
 
-func transferSection(label string, width int) string {
-	lineWidth := max(0, width-lipgloss.Width(label)-4)
-	return " " + mutedStyle.Render(label) + " " + borderStyle.Render(strings.Repeat(transferBorder.Top, lineWidth)) + "  "
-}
-
 func centeredSection(label string, width int) string {
-	lineWidth := max(0, width-lipgloss.Width(label)-2)
+	lineWidth := max(0, width-lipgloss.Width(label)-4)
 	leftWidth := lineWidth / 2
 	rightWidth := lineWidth - leftWidth
-	return borderStyle.Render(strings.Repeat(transferBorder.Top, leftWidth)) + " " + mutedStyle.Render(label) + " " + borderStyle.Render(strings.Repeat(transferBorder.Top, rightWidth))
+	return " " + borderStyle.Render(strings.Repeat(transferBorder.Top, leftWidth)) + " " + mutedStyle.Render(label) + " " + borderStyle.Render(strings.Repeat(transferBorder.Top, rightWidth)) + " "
 }
 
 func (m transferModel) renderSortSeparator(contentWidth, leftWidth int) string {

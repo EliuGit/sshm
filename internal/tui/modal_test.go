@@ -179,7 +179,7 @@ func TestConnectionMenuIsCompactAndPositionedBelowSelection(t *testing.T) {
 	if strings.Contains(view, "开发机") || strings.Contains(view, "Enter") || lipgloss.Width(view) != menuWidth {
 		t.Fatalf("连接菜单不够紧凑: %q", view)
 	}
-	if lines := strings.Split(view, "\n"); len(lines) != len(menuItems)+2 || !strings.Contains(lines[1], "› 连接shell") {
+	if lines := strings.Split(view, "\n"); len(lines) != len(menuItems)+2 || !strings.Contains(lines[1], "› 连接shell") || !strings.Contains(lines[1], "") {
 		t.Fatalf("连接菜单选中行发生错位: %q", view)
 	}
 	x, y := menuPosition(30, 2)

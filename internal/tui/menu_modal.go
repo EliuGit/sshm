@@ -101,11 +101,12 @@ func (m shellErrorModel) View() string {
 // View 生成紧凑的圆角快捷菜单。
 func (m menuModel) View() string {
 	contentWidth := menuWidth - 2
+	edgeStyle := lipgloss.NewStyle().Foreground(selectedColor).Background(backgroundColor)
 	lines := make([]string, 0, len(menuItems))
 	for i, item := range menuItems {
 		line := fit("   "+item, contentWidth)
 		if i == m.selected {
-			line = selectedStyle.Width(contentWidth).Render(" › " + item)
+			line = edgeStyle.Render("") + selectedStyle.Width(contentWidth-2).Render("› "+item) + edgeStyle.Render("")
 		}
 		lines = append(lines, line)
 	}

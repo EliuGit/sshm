@@ -49,7 +49,8 @@ func TestClosingCredentialManagerRefreshesConnectionCredentialName(t *testing.T)
 }
 
 func TestConnectionTableColumns(t *testing.T) {
-	table := newConnectionTable(60, 10, 0, true, testConnections, 0, true)
+	const width = 60
+	table := newConnectionTable(width, 10, 0, true, testConnections, 0, true)
 	columns := table.Columns()
 	if len(columns) != 3 || columns[0].Width != nameColumnWidth || columns[2].Width != userColumnWidth {
 		t.Fatalf("列表列定义 = %#v", columns)
@@ -59,6 +60,13 @@ func TestConnectionTableColumns(t *testing.T) {
 	}
 	if !strings.Contains(fitEllipsis(" 这是一个非常长的连接名称", nameColumnWidth), "...") {
 		t.Fatal("长名称未追加省略号")
+	}
+	selected := strings.Split(table.View(), "\n")[1]
+	if plain := ansi.Strip(selected); !strings.HasPrefix(plain, "") || !strings.HasSuffix(plain, "") {
+		t.Fatalf("选中行未渲染为胶囊: %q", plain)
+	}
+	if got := ansi.StringWidth(selected); got != width {
+		t.Fatalf("胶囊选中行宽度 = %d, want %d", got, width)
 	}
 }
 

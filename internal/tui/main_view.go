@@ -24,11 +24,12 @@ var windowTitle = "SSHM " + buildinfo.Version
 var (
 	backgroundColor = lipgloss.Color("#282C34")
 	textColor       = lipgloss.Color("#D8DEE9")
+	selectedColor   = lipgloss.Color("#007ea1")
 	accentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#00b3e4")).Bold(true)
 	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B6F78"))
 	borderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#5C6068"))
 	labelStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#babbbf"))
-	selectedStyle   = lipgloss.NewStyle().Background(lipgloss.Color("#007ea1")).Foreground(lipgloss.Color("#FFFFFF"))
+	selectedStyle   = lipgloss.NewStyle().Background(selectedColor).Foreground(lipgloss.Color("#FFFFFF"))
 	plainStyle      = lipgloss.NewStyle().Foreground(textColor)
 )
 
@@ -174,7 +175,13 @@ func newConnectionTable(width, height, selected int, focused bool, connections [
 	styles.Cell = lipgloss.NewStyle()
 	styles.Selected = lipgloss.NewStyle()
 	if focused {
-		styles.Selected = selectedStyle.Width(width).MaxWidth(width).Inline(true)
+		// 用原行首尾两格绘制圆角，避免胶囊撑宽表格或挤压右侧详情。
+		styles.Selected = selectedStyle.
+			Transform(func(row string) string { return ansi.Cut(row, 1, width-1) }).
+			Border(lipgloss.Border{Left: "", Right: ""}, false, true, false, true).
+			BorderForeground(selectedColor).
+			BorderBackground(backgroundColor).
+			MaxWidth(width)
 	}
 	t := table.New(
 		table.WithColumns([]table.Column{

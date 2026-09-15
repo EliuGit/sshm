@@ -189,6 +189,13 @@ func TestFileTransferViewLayout(t *testing.T) {
 	if strings.Contains(plain, "远程") || strings.Contains(plain, "地址：") {
 		t.Fatalf("顶部不应同时显示两个位置标签或地址标签: %q", plain)
 	}
+	if !strings.Contains(plain, " 本地 ") {
+		t.Fatalf("本地标签未渲染为胶囊: %q", plain)
+	}
+	m.location = remoteSide
+	if remote := ansi.Strip(m.renderHeader(78)); !strings.Contains(remote, " 远程 ") {
+		t.Fatalf("远程标签未渲染为胶囊: %q", remote)
+	}
 	if !strings.Contains(lines[3], "🔍") || !strings.Contains(lines[4], "📁") {
 		t.Fatalf("筛选框和文件列表之间存在间隔: %q", lines[3:5])
 	}
@@ -296,8 +303,11 @@ func TestFileTransferDetailsUseSectionSpacing(t *testing.T) {
 		t.Fatalf("右侧不应显示主机和排序区块: %q", view)
 	}
 	section := ansi.Strip(centeredSection("剪贴板", 25))
-	if ansi.StringWidth(section) != 25 || !strings.Contains(section, "─ 剪贴板 ─") {
+	if ansi.StringWidth(section) != 25 || !strings.HasPrefix(section, " ") || !strings.HasSuffix(section, " ") || !strings.Contains(section, "─ 剪贴板 ─") {
 		t.Fatalf("剪贴板标题未使用左右横线: %q", section)
+	}
+	if !strings.Contains(view, ansi.Strip(centeredSection("状态", 25))) {
+		t.Fatalf("状态标题未使用与剪贴板相同的居中样式: %q", view)
 	}
 	m.clipboard.entries = []transferEntry{{name: "server.log"}}
 	view = ansi.Strip(strings.Join(m.renderDetails(25, 16), "\n"))
@@ -337,14 +347,14 @@ func TestFileTransferSeparatorsAndSelectionBackground(t *testing.T) {
 	}
 }
 
-func TestFileTransferClipboardColorDoesNotRestoreSelection(t *testing.T) {
+func TestFileTransferClipboardDoesNotChangeSelectionMarker(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	m.selected["downloads"] = struct{}{}
 	defaultLine := m.renderList(51, 10)[1]
 	m.copySelection()
 	copyLine := m.renderList(51, 10)[1]
-	if defaultLine == copyLine {
-		t.Fatal("普通多选和复制未使用不同的图标背景色")
+	if defaultLine != copyLine {
+		t.Fatal("复制状态改变了多选色块")
 	}
 
 	m.enterDirectory()
@@ -352,18 +362,18 @@ func TestFileTransferClipboardColorDoesNotRestoreSelection(t *testing.T) {
 		t.Fatal("离开剪贴板来源目录后仍保留多选")
 	}
 	m.goParent()
-	if len(m.selected) != 0 || !m.isClipboardEntry("downloads") {
-		t.Fatalf("返回剪贴板来源目录后剪贴板标记污染了多选: selected=%v", m.selected)
+	if len(m.selected) != 0 || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "downloads" {
+		t.Fatalf("返回剪贴板来源目录后状态错误: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
 	}
-	if line := m.renderList(51, 10)[1]; line != copyLine {
-		t.Fatalf("剪贴板标记未恢复复制颜色: got=%q want=%q", line, copyLine)
+	if line := m.renderList(51, 10)[1]; strings.Contains(line, "48;2;") {
+		t.Fatalf("剪贴板状态仍显示在列表中: %q", line)
 	}
 }
 
 func TestFileTransferClipboardSelectsCurrentEntryByDefault(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	m.copySelection()
-	if _, ok := m.selected["downloads"]; !ok || !m.isClipboardEntry("downloads") {
+	if _, ok := m.selected["downloads"]; !ok || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "downloads" {
 		t.Fatalf("无多选时未选中当前项: selected=%v", m.selected)
 	}
 	if !strings.Contains(m.renderList(51, 10)[1], "48;2;") {
@@ -840,7 +850,7 @@ func TestRenamingClipboardSourceUpdatesClipboardReference(t *testing.T) {
 	m.overlay.renameInput.SetValue("archives")
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
 	m = updated.(transferModel)
-	if len(m.selected) != 0 || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "archives" || !m.isClipboardEntry("archives") {
+	if len(m.selected) != 0 || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "archives" || !m.atClipboardSource() {
 		t.Fatalf("重命名来源项后剪贴板未同步: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
 	}
 }

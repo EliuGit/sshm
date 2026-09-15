@@ -402,7 +402,7 @@ func (m *transferModel) toggleSort(field byte) {
 	}
 }
 
-// resetSelection 在路径切换后清空临时多选；剪贴板标记由渲染层独立处理。
+// resetSelection 在路径切换后清空临时多选。
 func (m *transferModel) resetSelection() {
 	clear(m.selected)
 	m.cursor = 0
@@ -416,18 +416,6 @@ func (m transferModel) atClipboardSource() bool {
 		return path.Clean(m.clipboard.path) == path.Clean(m.remotePath)
 	}
 	return filepath.Clean(m.clipboard.path) == filepath.Clean(m.localPath)
-}
-
-func (m transferModel) isClipboardEntry(entryName string) bool {
-	if !m.atClipboardSource() {
-		return false
-	}
-	for _, entry := range m.clipboard.entries {
-		if entry.name == entryName {
-			return true
-		}
-	}
-	return false
 }
 
 func (m *transferModel) syncAddress() {
