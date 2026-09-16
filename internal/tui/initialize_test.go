@@ -55,6 +55,9 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	if main.width != 100 || main.height != 30 {
 		t.Fatalf("主界面未继承终端尺寸: %d×%d", main.width, main.height)
 	}
+	if main.path != path {
+		t.Fatalf("主界面数据库路径 = %q, want %q", main.path, path)
+	}
 }
 
 func TestSavedPasswordFailureShowsRememberedPasswordMessage(t *testing.T) {
@@ -86,8 +89,12 @@ func TestUnlockShowsSimplePasswordErrorWithoutLabel(t *testing.T) {
 	store.Close()
 
 	m := newInitializeModel(path, initializeUnlock)
-	if view := ansi.Strip(m.View().Content); strings.Contains(view, "密码 >") || strings.Contains(view, "│   应用密码") || !m.password.Focused() {
+	if view := ansi.Strip(m.View().Content); strings.Contains(view, "密码 >") || strings.Contains(view, "│   应用密码") || strings.Contains(view, "修改密码") || !m.password.Focused() {
 		t.Fatalf("解锁界面不应显示标签且密码框应有焦点: %q", view)
+	}
+	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'p', Mod: tea.ModCtrl}))
+	if _, ok := updated.(initializeModel); !ok {
+		t.Fatal("解锁界面 Ctrl+P 不应切换模型")
 	}
 	m.password.SetValue("wrong")
 	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEnter}))
@@ -160,42 +167,63 @@ func TestInitializeEscReturnsSilentCancel(t *testing.T) {
 	}
 }
 
-func TestUnlockShortcutChangesPasswordAndReturnsStore(t *testing.T) {
+func TestMainShortcutChangesPasswordAndRemovesRememberedPassword(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sshm.db")
-	initial, err := repository.Initialize(path, []byte("old-password"))
+	store, err := repository.Initialize(path, []byte("old-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	initial.Close()
 	if err := savePassword(path, []byte("old-password")); err != nil {
+		store.Close()
 		t.Fatal(err)
 	}
 
-	m := newInitializeModel(path, initializeUnlock)
+	m := model{store: store, path: path}
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'p', Mod: tea.ModCtrl}))
-	m = updated.(initializeModel)
+	m = updated.(model)
 	form := m.modal.(passwordFormModel)
-	form.inputs[oldPasswordField].SetValue("old-password")
+	form.inputs[oldPasswordField].SetValue("wrong-password")
 	form.inputs[newPasswordField].SetValue("new-password")
 	form.inputs[repeatPasswordField].SetValue("new-password")
-	updatedModal, cmd := form.Update(tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl}))
+	m.modal = form
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl}))
+	m = updated.(model)
+	failed, ok := cmd().(passwordChangeFailedMsg)
+	if !ok || !errors.Is(failed.err, repository.ErrInvalidPassword) {
+		t.Fatalf("错误原密码的结果 = %#v", failed)
+	}
+	updated, _ = m.Update(failed)
+	m = updated.(model)
+	form = m.modal.(passwordFormModel)
+	if form.err != "密码不正确" || form.saving {
+		t.Fatalf("错误原密码后表单状态错误: err=%q saving=%v", form.err, form.saving)
+	}
+	form.inputs[oldPasswordField].SetValue("old-password")
+	m.modal = form
+	updated, cmd = m.Update(tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl}))
 	if cmd == nil {
 		t.Fatal("修改密码未开始保存")
 	}
-	m.modal = updatedModal
+	m = updated.(model)
 	msg, ok := cmd().(passwordChangedMsg)
-	if !ok || msg.store == nil {
+	if !ok {
 		t.Fatalf("修改密码结果错误: %#v", msg)
 	}
 	final, _ := m.Update(msg)
-	m = final.(initializeModel)
-	if m.store == nil || m.result != nil {
-		t.Fatalf("修改密码后未完成解锁: store=%v err=%v", m.store, m.result)
+	m = final.(model)
+	if m.modal != nil {
+		t.Fatal("修改密码后未关闭弹窗")
 	}
 	if _, err := os.Stat(savePath(path)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("修改密码后未删除记住的密码")
 	}
-	m.store.Close()
+	store.Close()
+	if oldStore, err := repository.Unlock(path, []byte("old-password")); !errors.Is(err, repository.ErrInvalidPassword) {
+		if oldStore != nil {
+			oldStore.Close()
+		}
+		t.Fatalf("旧密码仍可解锁: %v", err)
+	}
 	if store, err := repository.Unlock(path, []byte("new-password")); err != nil {
 		t.Fatalf("新密码无法解锁: %v", err)
 	} else {

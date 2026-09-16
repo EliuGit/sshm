@@ -15,6 +15,7 @@ import (
 // model 保存界面状态。终端尺寸由 Bubble Tea 通过 WindowSizeMsg 提供。
 type model struct {
 	store         *repository.Store
+	path          string
 	width         int
 	height        int
 	selected      int
@@ -27,8 +28,8 @@ type model struct {
 	modal         modalModel
 }
 
-func newModel(store *repository.Store) (model, error) {
-	m := model{store: store, searchInput: newSearchInput(), searchReady: true}
+func newModel(store *repository.Store, path string) (model, error) {
+	m := model{store: store, path: path, searchInput: newSearchInput(), searchReady: true}
 	connections, err := store.ListConnections()
 	if err != nil {
 		return m, err
@@ -70,6 +71,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.connections[i].auth = map[string]string{"passwd": "密码", "key": "私钥"}[saved.credential.Type]
 			}
 		}
+	}
+	if _, ok := msg.(passwordChangedMsg); ok {
+		m.modal = nil
+		return m, nil
 	}
 	if prepared, ok := msg.(shellPreparedMsg); ok {
 		if prepared.err != nil {
@@ -183,6 +188,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "p":
 			m.modal = newCredentialManager(m.store)
+			return m, nil
+		case "ctrl+p":
+			m.modal = newPasswordForm(func(oldPassword, newPassword []byte) error {
+				if err := m.store.ChangePassword(oldPassword, newPassword); err != nil {
+					return err
+				}
+				_ = removePassword(m.path)
+				return nil
+			})
 			return m, nil
 		case "enter", "l":
 			connections := m.visibleConnections()

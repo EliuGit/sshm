@@ -257,7 +257,7 @@ func (m connectionFormModel) View() string {
 		m.credentialRow(),
 		borderStyle.Render(strings.Repeat("─", modalContentWidth)),
 	}
-	status := "Ctrl+S: 保存 | Esc: 取消"
+	status := "Ctrl+S 保存 | Esc 取消"
 	if m.err != "" {
 		status = formErrorStyle.Render(m.err)
 	} else if m.saving {

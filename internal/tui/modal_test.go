@@ -379,7 +379,7 @@ func TestCredentialPickerSelectsExistingOrOpensCreateForm(t *testing.T) {
 	if !strings.Contains(ansi.Strip(form.View()), "[密码]共享密码") {
 		t.Fatal("连接表单未按类型和名称显示凭据")
 	}
-	if view := ansi.Strip(parent.View()); strings.Contains(view, "切换") || strings.Contains(view, "Enter: 选择") || !strings.Contains(view, "Ctrl+S: 保存") {
+	if view := ansi.Strip(parent.View()); strings.Contains(view, "切换") || strings.Contains(view, "Enter 选择") || !strings.Contains(view, "Ctrl+S 保存") {
 		t.Fatalf("连接表单快捷提示未更新: %q", view)
 	}
 	created, _ := picker.Update(tea.KeyPressMsg(tea.Key{Text: "a"}))

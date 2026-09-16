@@ -29,13 +29,20 @@ func TestRenderPanelSizeAndSections(t *testing.T) {
 			t.Fatalf("第 %d 行宽度 = %d, want %d", i+1, got, width)
 		}
 	}
-	for _, text := range []string{"SSHM", "搜索名称、主机、用户、备注...", "名称", "主机:端口", "详情", "Enter/l: 菜单", "a: 新增", "p: 凭据管理"} {
+	for _, text := range []string{"SSHM", "搜索名称、主机、用户、备注...", "名称", "主机:端口", "详情", "Enter/l 菜单", "a 新增", "p 凭据", "Ctrl+P 修改密码"} {
 		if !strings.Contains(ansi.Strip(panel), text) {
 			t.Fatalf("界面缺少 %q", text)
 		}
 	}
-	if !strings.Contains(lines[height-2], "a: 新增") {
+	if strings.Contains(ansi.Strip(panel), "滚动") {
+		t.Fatal("底部仍显示已替换的滚动提示")
+	}
+	if !strings.Contains(lines[height-2], "a 新增") {
 		t.Fatal("底部快捷键行后仍有空行")
+	}
+	compact := ansi.Strip(renderPanelWithConnections(minWidth, height, 0, false, newSearchInput(), nil, 0, true))
+	if !strings.Contains(compact, "Ctrl+P 修改密码 | q 退出") {
+		t.Fatalf("最小窗口宽度下快捷键提示被截断: %q", compact)
 	}
 }
 

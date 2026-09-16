@@ -181,7 +181,7 @@ func TestFileTransferViewLayout(t *testing.T) {
 		}
 	}
 	plain := ansi.Strip(view)
-	for _, content := range []string{"本地", "🔍", "筛选文件...", "📁", "📄", "1/2: 切换", "y/p: 复制/粘贴", "q/Esc: 关闭", "?: 帮助", "已读取"} {
+	for _, content := range []string{"本地", "🔍", "筛选文件...", "📁", "📄", "1/2 切换", "y/p 复制/粘贴", "q/Esc 关闭", "? 帮助", "已读取"} {
 		if !strings.Contains(plain, content) {
 			t.Fatalf("文件传输弹窗缺少 %q: %q", content, plain)
 		}
@@ -203,7 +203,7 @@ func TestFileTransferViewLayout(t *testing.T) {
 		t.Fatal("本地和远程标签使用了相同背景色")
 	}
 	footer := ansi.Strip(lines[len(lines)-2])
-	if strings.Contains(footer, "n/s/d") || strings.Contains(footer, "Ctrl+G") || strings.Contains(footer, "Ctrl+D") || strings.Contains(footer, "r: 重命名") {
+	if strings.Contains(footer, "n/s/d") || strings.Contains(footer, "Ctrl+G") || strings.Contains(footer, "Ctrl+D") || strings.Contains(footer, "r 重命名") {
 		t.Fatalf("底部显示了应移入帮助弹窗的快捷键: %q", footer)
 	}
 	styles := m.search.Styles()

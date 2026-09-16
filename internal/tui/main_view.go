@@ -148,7 +148,7 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 	}
 
 	put(footerLine, borderStyle.Render(strings.Repeat("─", contentWidth)))
-	put(footerLine+1, mutedStyle.Render("Enter/l: 菜单 | a: 新增 | p: 凭据管理 | n/h/u: 排序 | ↑/k/↓/j: 滚动 | q: 退出 "))
+	put(footerLine+1, mutedStyle.Render("Enter/l 菜单 | a 新增 | p 凭据 | n/h/u 排序 | Ctrl+P 修改密码 | q 退出"))
 
 	result := make([]string, 0, height)
 	title := accentStyle.Render(" " + windowTitle + " ")

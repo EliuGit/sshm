@@ -34,7 +34,6 @@ type initializeModel struct {
 	repeat   textinput.Model
 	err      string
 	saving   bool
-	modal    modalModel
 	store    *repository.Store
 	result   error
 }
@@ -80,7 +79,7 @@ func newApplicationModel(path string, status repository.Status, saved []byte, lo
 	if status == repository.Ready && loadErr == nil {
 		store, err := repository.Unlock(path, saved)
 		if err == nil {
-			main, modelErr := newModel(store)
+			main, modelErr := newModel(store, path)
 			if modelErr != nil {
 				_ = store.Close()
 				return applicationModel{result: fmt.Errorf("读取连接列表: %w", modelErr)}
@@ -129,7 +128,7 @@ func (m applicationModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 	}
 	if m.initializing.store != nil {
-		main, err := newModel(m.initializing.store)
+		main, err := newModel(m.initializing.store, m.initializing.path)
 		if err != nil {
 			_ = m.initializing.store.Close()
 			m.result = fmt.Errorf("读取连接列表: %w", err)
@@ -153,7 +152,7 @@ func newInitializeModel(path string, mode initializeMode) initializeModel {
 	m := initializeModel{path: path, mode: mode}
 	m.password = newFormInput("应用密码", 16)
 	if mode == initializeUnlock {
-		m.password.Placeholder = "Ctrl+S 解锁并记住密码"
+		m.password.Placeholder = ""
 	}
 	m.password.EchoMode = textinput.EchoPassword
 	m.password.EchoCharacter = '•'
@@ -168,14 +167,10 @@ func newInitializeModel(path string, mode initializeMode) initializeModel {
 
 func (m initializeModel) Init() tea.Cmd { return nil }
 
-// Update 处理初始化、解锁及修改密码弹窗的输入和异步结果。
+// Update 处理初始化、解锁的输入和异步结果。
 func (m initializeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
 		m.width, m.height = size.Width, size.Height
-	}
-	if _, ok := msg.(closeModalMsg); ok {
-		m.modal = nil
-		return m, nil
 	}
 	if result, ok := msg.(initializeResultMsg); ok {
 		m.saving = false
@@ -187,15 +182,6 @@ func (m initializeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.store = result.store
 		return m.finish(nil)
-	}
-	if result, ok := msg.(passwordChangedMsg); ok && result.store != nil {
-		m.store = result.store
-		return m.finish(nil)
-	}
-	if m.modal != nil {
-		var cmd tea.Cmd
-		m.modal, cmd = m.modal.Update(msg)
-		return m, cmd
 	}
 	if m.saving {
 		return m, nil
@@ -213,10 +199,6 @@ func (m initializeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch key.String() {
 	case "esc", "ctrl+c":
 		return m.finish(ErrInitializationCanceled)
-	case "ctrl+p":
-		if m.mode == initializeUnlock {
-			return m.openPasswordChange()
-		}
 	case "tab", "down":
 		if m.mode == initializeNew {
 			m.password.Blur()
@@ -298,24 +280,6 @@ func (m initializeModel) submit(remember bool) (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m initializeModel) openPasswordChange() (tea.Model, tea.Cmd) {
-	form := newPasswordForm(func(oldPassword, newPassword []byte) (*repository.Store, error) {
-		store, err := repository.Unlock(m.path, oldPassword)
-		if err != nil {
-			return nil, err
-		}
-		if err = store.ChangePassword(oldPassword, newPassword); err != nil {
-			_ = store.Close()
-			return nil, err
-		}
-		_ = removePassword(m.path)
-		return store, nil
-	})
-	m.modal = form
-	m.err = ""
-	return m, nil
-}
-
 func (m initializeModel) finish(err error) (tea.Model, tea.Cmd) {
 	m.result = err
 	return m, tea.Quit
@@ -327,9 +291,6 @@ func (m initializeModel) View() tea.View {
 		title = "解锁"
 	}
 	body := m.viewBody(title)
-	if m.modal != nil {
-		body = m.modal.View()
-	}
 	if m.width > 0 && m.height > 0 {
 		base := strings.Repeat(" ", m.width)
 		base = strings.Repeat(base+"\n", m.height-1) + base
@@ -344,9 +305,9 @@ func (m initializeModel) View() tea.View {
 }
 
 func (m initializeModel) viewBody(title string) string {
-	status := "Enter/Ctrl+S: 确定 | Esc: 退出"
+	status := "Enter/Ctrl+S 确定 | Esc 退出"
 	if m.mode == initializeUnlock {
-		status = "Enter: 解锁 | Ctrl+P: 修改密码 | Esc: 退出"
+		status = "Enter 解锁 | Ctrl+S 解锁并记住密码 | Esc 退出"
 	}
 	style := mutedStyle
 	if m.err != "" {
@@ -368,7 +329,7 @@ func (m initializeModel) viewBody(title string) string {
 	if m.repeat.Focused() {
 		repeatLabelStyle, repeatLabel = formActiveLabel, "重复 >"
 	}
-	passwordRow := passwordStyle.Render(m.password.View())
+	passwordRow := ">" + passwordStyle.Render(m.password.View())
 	if m.mode == initializeNew {
 		passwordRow = "  " + passwordLabelStyle.Render(passwordLabel) + passwordStyle.Render(m.password.View())
 	}

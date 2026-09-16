@@ -17,7 +17,7 @@ const (
 	passwordFieldCount
 )
 
-type passwordChangedMsg struct{ store *repository.Store }
+type passwordChangedMsg struct{}
 type passwordChangeFailedMsg struct{ err error }
 
 func passwordErrorMessage(err error) string {
@@ -29,14 +29,14 @@ func passwordErrorMessage(err error) string {
 
 // passwordFormModel 管理应用主密码修改表单。
 type passwordFormModel struct {
-	changePassword func([]byte, []byte) (*repository.Store, error)
+	changePassword func([]byte, []byte) error
 	inputs         [passwordFieldCount]textinput.Model
 	focus          int
 	err            string
 	saving         bool
 }
 
-func newPasswordForm(changePassword func([]byte, []byte) (*repository.Store, error)) passwordFormModel {
+func newPasswordForm(changePassword func([]byte, []byte) error) passwordFormModel {
 	m := passwordFormModel{changePassword: changePassword}
 	placeholders := [...]string{"当前应用密码", "新的应用密码", "再次输入新密码"}
 	for i := range m.inputs {
@@ -108,11 +108,10 @@ func (m passwordFormModel) save() (modalModel, tea.Cmd) {
 	return m, func() tea.Msg {
 		defer clear(oldBytes)
 		defer clear(newBytes)
-		store, err := m.changePassword(oldBytes, newBytes)
-		if err != nil {
+		if err := m.changePassword(oldBytes, newBytes); err != nil {
 			return passwordChangeFailedMsg{err: err}
 		}
-		return passwordChangedMsg{store: store}
+		return passwordChangedMsg{}
 	}
 }
 
@@ -126,7 +125,7 @@ func (m passwordFormModel) View() string {
 		lines = append(lines, m.inputRow(label, m.inputs[i].View(), i), "")
 	}
 	lines = append(lines[:len(lines)-1], borderStyle.Render(strings.Repeat("─", modalContentWidth)))
-	status := "Ctrl+S: 保存 | Esc: 取消"
+	status := "Ctrl+S 保存 | Esc 取消"
 	style := mutedStyle
 	if m.err != "" {
 		status, style = m.err, formErrorStyle
