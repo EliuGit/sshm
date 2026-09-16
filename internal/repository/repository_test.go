@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestInitializeUnlockAndCredentialEncryption(t *testing.T) {
+func TestInitializeUnlockAndDatabaseEncryption(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sshm.db")
 	store, err := Initialize(path, []byte("correct horse"))
 	if err != nil {
@@ -17,13 +17,11 @@ func TestInitializeUnlockAndCredentialEncryption(t *testing.T) {
 	if status, err := Inspect(path); err != nil || status != Ready {
 		t.Fatalf("Inspect() = %v, %v", status, err)
 	}
-	nonce, ciphertext, err := store.Encrypt([]byte("secret"))
-	if err != nil {
-		t.Fatal(err)
+	if key, err := os.ReadFile(path + ".key"); err != nil || len(key) != sealedKeySize {
+		t.Fatalf("密钥文件长度 = %d, %v", len(key), err)
 	}
-	plain, err := store.Decrypt(nonce, ciphertext)
-	if err != nil || string(plain) != "secret" {
-		t.Fatalf("Decrypt() = %q, %v", plain, err)
+	if _, err = store.CreateCredential(NewCredential{Name: "加密检查", Type: "passwd", Content: []byte("database-encryption-marker")}); err != nil {
+		t.Fatal(err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -38,6 +36,16 @@ func TestInitializeUnlockAndCredentialEncryption(t *testing.T) {
 	defer store.Close()
 	if _, err := os.Stat(path); err != nil {
 		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.HasPrefix(data, []byte("SQLite format 3")) {
+		t.Fatal("数据库仍包含 SQLite 明文文件头")
+	}
+	if bytes.Contains(data, []byte("database-encryption-marker")) {
+		t.Fatal("数据库仍包含凭据明文")
 	}
 }
 
@@ -95,13 +103,24 @@ func TestInspectEmptyDatabase(t *testing.T) {
 	}
 }
 
+func TestInspectMissingDatabaseIgnoresOrphanKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing.db")
+	if err := os.WriteFile(path+".key", []byte("orphan"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	status, err := Inspect(path)
+	if err != nil || status != NotFound {
+		t.Fatalf("Inspect() = %v, %v", status, err)
+	}
+}
+
 func TestListConnections(t *testing.T) {
 	store, err := Initialize(filepath.Join(t.TempDir(), "sshm.db"), []byte("password"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	if _, err := store.db.Exec(`INSERT INTO credentials(name,type,nonce,ciphertext) VALUES('key-1','key',zeroblob(24),zeroblob(16))`); err != nil {
+	if _, err := store.db.Exec(`INSERT INTO credentials(name,type,content) VALUES('key-1','key',x'00')`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := store.db.Exec(`INSERT INTO connections(name,host,username,credential_id,use_count,remark) VALUES('开发机','dev.example.com','root',1,7,'测试')`); err != nil {
@@ -164,13 +183,12 @@ func TestCreateCredentialAndReuseItForConnections(t *testing.T) {
 	if connection.ID == 0 || connection.Credential != "passwd" || connection.CredentialID != credential.ID {
 		t.Fatalf("创建结果 = %#v", connection)
 	}
-	var nonce, ciphertext []byte
-	if err := store.db.QueryRow("SELECT nonce,ciphertext FROM credentials WHERE name=?", "生产服务器密码").Scan(&nonce, &ciphertext); err != nil {
+	var content []byte
+	if err := store.db.QueryRow("SELECT content FROM credentials WHERE name=?", "生产服务器密码").Scan(&content); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err := store.Decrypt(nonce, ciphertext)
-	if err != nil || string(plaintext) != "secret" {
-		t.Fatalf("凭据解密结果 = %q, %v", plaintext, err)
+	if string(content) != "secret" {
+		t.Fatalf("凭据内容 = %q", content)
 	}
 	credentials, err := store.ListCredentials()
 	if err != nil || len(credentials) != 1 {
@@ -201,13 +219,12 @@ func TestCreateCredentialEncryptsPrivateKey(t *testing.T) {
 	if err != nil || connection.Credential != "key" {
 		t.Fatalf("私钥连接创建结果 = %#v, %v", connection, err)
 	}
-	var nonce, ciphertext []byte
-	if err := store.db.QueryRow("SELECT nonce,ciphertext FROM credentials WHERE name=?", "部署私钥").Scan(&nonce, &ciphertext); err != nil {
+	var content []byte
+	if err := store.db.QueryRow("SELECT content FROM credentials WHERE name=?", "部署私钥").Scan(&content); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err := store.Decrypt(nonce, ciphertext)
-	if err != nil || string(plaintext) != privateKey {
-		t.Fatalf("私钥解密结果 = %q, %v", plaintext, err)
+	if string(content) != privateKey {
+		t.Fatalf("私钥内容 = %q", content)
 	}
 }
 
@@ -257,30 +274,29 @@ func TestManageCredentials(t *testing.T) {
 	if err != nil || len(credentials) != 1 || credentials[0].ConnectionCount != 1 {
 		t.Fatalf("凭据关联数量 = %#v, %v", credentials, err)
 	}
-	var oldNonce, oldCiphertext []byte
-	if err := store.db.QueryRow("SELECT nonce,ciphertext FROM credentials WHERE id=?", credential.ID).Scan(&oldNonce, &oldCiphertext); err != nil {
+	var oldContent []byte
+	if err := store.db.QueryRow("SELECT content FROM credentials WHERE id=?", credential.ID).Scan(&oldContent); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.UpdateCredential(credential.ID, "共享私钥", "key", nil); err != nil {
 		t.Fatal(err)
 	}
 	var credentialType string
-	var nonce, ciphertext []byte
-	if err := store.db.QueryRow("SELECT type,nonce,ciphertext FROM credentials WHERE id=?", credential.ID).Scan(&credentialType, &nonce, &ciphertext); err != nil {
+	var content []byte
+	if err := store.db.QueryRow("SELECT type,content FROM credentials WHERE id=?", credential.ID).Scan(&credentialType, &content); err != nil {
 		t.Fatal(err)
 	}
-	if credentialType != "key" || !bytes.Equal(nonce, oldNonce) || !bytes.Equal(ciphertext, oldCiphertext) {
-		t.Fatal("空内容编辑未保留原密文")
+	if credentialType != "key" || !bytes.Equal(content, oldContent) {
+		t.Fatal("空内容编辑未保留原凭据")
 	}
 	if err := store.UpdateCredential(credential.ID, "共享私钥", "key", []byte("new-secret")); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.QueryRow("SELECT nonce,ciphertext FROM credentials WHERE id=?", credential.ID).Scan(&nonce, &ciphertext); err != nil {
+	if err := store.db.QueryRow("SELECT content FROM credentials WHERE id=?", credential.ID).Scan(&content); err != nil {
 		t.Fatal(err)
 	}
-	plaintext, err := store.Decrypt(nonce, ciphertext)
-	if err != nil || string(plaintext) != "new-secret" {
-		t.Fatalf("更新后的凭据内容 = %q, %v", plaintext, err)
+	if string(content) != "new-secret" {
+		t.Fatalf("更新后的凭据内容 = %q", content)
 	}
 	if err := store.DeleteCredential(credential.ID); err == nil {
 		t.Fatal("删除了仍有关联的凭据")

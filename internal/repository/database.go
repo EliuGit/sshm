@@ -2,71 +2,51 @@ package repository
 
 import (
 	"bytes"
+	"crypto/rand"
 	"database/sql"
 	"embed"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite"
+	"github.com/ncruces/go-sqlite3"
+	"github.com/ncruces/go-sqlite3/driver"
+	_ "github.com/ncruces/go-sqlite3/vfs/adiantum"
 )
 
 //go:embed schema.sql
 var schemaFS embed.FS
 
-// Inspect 检查数据库文件和新 schema，不会创建文件。
+func keyPath(path string) string { return path + ".key" }
+
+// Inspect 只检查数据库和密钥文件是否齐全；数据库结构在输入密码后检查。
 func Inspect(path string) (Status, error) {
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+	info, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
 		return NotFound, nil
-	} else if err != nil {
-		return 0, err
 	}
-	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=ro")
 	if err != nil {
 		return 0, err
 	}
-	defer db.Close()
-	var version int
-	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
-		return 0, err
+	if !info.Mode().IsRegular() {
+		return 0, errors.New("数据库路径不是普通文件")
 	}
-	var n int
-	if err = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='master_key'").Scan(&n); err != nil {
-		return 0, err
-	}
-	if n == 0 {
-		if version != 0 {
-			return 0, fmt.Errorf("不支持的数据库版本: %d", version)
-		}
-		if err = db.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").Scan(&n); err != nil {
-			return 0, err
-		}
-		if n == 0 {
+	if info.Size() == 0 {
+		if _, keyErr := os.Stat(keyPath(path)); errors.Is(keyErr, os.ErrNotExist) {
 			return Uninitialized, nil
 		}
-		return 0, errors.New("数据库不是 SSHM 新版格式")
 	}
-	if version != 1 {
-		return 0, fmt.Errorf("不支持的数据库版本: %d", version)
-	}
-	if err = db.QueryRow("SELECT count(*) FROM master_key WHERE id=1").Scan(&n); err != nil {
-		return 0, err
-	}
-	if n == 0 {
-		return Uninitialized, nil
-	}
-	var salt, nonce, ciphertext []byte
-	if err = db.QueryRow("SELECT kdf_salt, nonce, encrypted_data_key FROM master_key WHERE id=1").Scan(&salt, &nonce, &ciphertext); err != nil {
-		return 0, err
-	}
-	if err = validateMasterKey(salt, nonce, ciphertext); err != nil {
+	if _, _, _, err = readSealedKey(keyPath(path)); errors.Is(err, os.ErrNotExist) {
+		return 0, errors.New("数据库秘钥已损坏,请删除数据库文件和密钥文件后重新初始化")
+	} else if err != nil {
 		return 0, err
 	}
 	return Ready, nil
 }
 
-// Initialize 创建新数据库并用主密码封装随机数据密钥。
+// Initialize 创建由随机数据密钥加密的新数据库，并使用应用密码封装数据密钥。
 func Initialize(path string, password []byte) (*Store, error) {
 	if len(password) == 0 {
 		return nil, errors.New("主密码不能为空")
@@ -74,72 +54,106 @@ func Initialize(path string, password []byte) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return nil, err
 	}
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
+	dataKey := make([]byte, keySize)
+	if _, err := rand.Read(dataKey); err != nil {
 		return nil, err
 	}
-	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
+	fail := func(err error) (*Store, error) {
+		clear(dataKey)
+		_ = os.Remove(path)
+		_ = os.Remove(keyPath(path))
 		return nil, err
+	}
+	salt, nonce, ciphertext, err := sealDataKey(password, dataKey)
+	if err != nil {
+		return fail(err)
+	}
+	if err = writeSealedKey(keyPath(path), salt, nonce, ciphertext); err != nil {
+		return fail(err)
+	}
+	db, err := openEncrypted(path, dataKey, "rwc")
+	if err != nil {
+		return fail(err)
 	}
 	schema, err := schemaFS.ReadFile("schema.sql")
 	if err != nil {
-		db.Close()
-		return nil, err
+		_ = db.Close()
+		return fail(err)
 	}
 	tx, err := db.Begin()
 	if err != nil {
-		db.Close()
-		return nil, err
+		_ = db.Close()
+		return fail(err)
 	}
 	if _, err = tx.Exec(string(schema)); err != nil {
-		tx.Rollback()
-		db.Close()
-		return nil, err
-	}
-	dataKey, err := sealStore(tx, password)
-	if err != nil {
-		tx.Rollback()
-		db.Close()
-		return nil, err
+		_ = tx.Rollback()
+		_ = db.Close()
+		return fail(err)
 	}
 	if err = tx.Commit(); err != nil {
-		clear(dataKey)
-		db.Close()
-		return nil, err
+		_ = db.Close()
+		return fail(err)
 	}
-	return &Store{db: db, dataKey: dataKey}, nil
+	return &Store{db: db, dataKey: dataKey, keyPath: keyPath(path)}, nil
 }
 
-// Unlock 使用主密码解密数据库中的数据密钥。
+// Unlock 使用应用密码解封数据密钥并打开加密数据库。
 func Unlock(path string, password []byte) (*Store, error) {
-	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(path)+"?mode=rw")
+	salt, nonce, ciphertext, err := readSealedKey(keyPath(path))
 	if err != nil {
-		return nil, err
-	}
-	if _, err = db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		db.Close()
-		return nil, err
-	}
-	var salt, nonce, ciphertext []byte
-	if err = db.QueryRow("SELECT kdf_salt, nonce, encrypted_data_key FROM master_key WHERE id=1").Scan(&salt, &nonce, &ciphertext); err != nil {
-		db.Close()
-		return nil, err
-	}
-	if err = validateMasterKey(salt, nonce, ciphertext); err != nil {
-		db.Close()
 		return nil, err
 	}
 	dataKey, err := unsealDataKey(password, salt, nonce, ciphertext)
 	if err != nil {
-		db.Close()
 		return nil, fmt.Errorf("%w: %v", ErrInvalidPassword, err)
 	}
-	return &Store{db: db, dataKey: dataKey}, nil
+	db, err := openEncrypted(path, dataKey, "rw")
+	if err != nil {
+		clear(dataKey)
+		return nil, err
+	}
+	var version int
+	if err = db.QueryRow("PRAGMA user_version").Scan(&version); err != nil {
+		_ = db.Close()
+		clear(dataKey)
+		return nil, fmt.Errorf("打开加密数据库: %w", err)
+	}
+	if version != 1 {
+		_ = db.Close()
+		clear(dataKey)
+		return nil, fmt.Errorf("不支持的数据库版本: %d", version)
+	}
+	if _, err = db.Exec("SELECT content FROM credentials LIMIT 0"); err != nil {
+		_ = db.Close()
+		clear(dataKey)
+		return nil, errors.New("数据库不是 SSHM 加密格式")
+	}
+	return &Store{db: db, dataKey: dataKey, keyPath: keyPath(path)}, nil
 }
 
-// ChangePassword 验证原密码，并使用非空的新密码重新封装当前数据密钥。
-// 修改只更新主密钥记录，不会重新加密凭据；返回 nil 后旧密码立即失效。
+func openEncrypted(path string, dataKey []byte, mode string) (*sql.DB, error) {
+	dsn := "file:" + filepath.ToSlash(path) + "?mode=" + mode + "&vfs=adiantum"
+	hexKey := hex.EncodeToString(dataKey)
+	db, err := driver.Open(dsn, func(conn *sqlite3.Conn) error {
+		if err := conn.Exec("PRAGMA hexkey='" + hexKey + "'"); err != nil {
+			return err
+		}
+		if err := conn.Exec("PRAGMA foreign_keys=ON"); err != nil {
+			return err
+		}
+		return conn.Exec("PRAGMA temp_store=memory")
+	})
+	if err != nil {
+		return nil, err
+	}
+	if err = db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
+	return db, nil
+}
+
+// ChangePassword 验证原密码，并使用新密码重新封装数据库数据密钥。
 func (s *Store) ChangePassword(oldPassword, newPassword []byte) error {
 	if len(oldPassword) == 0 {
 		return ErrInvalidPassword
@@ -147,11 +161,8 @@ func (s *Store) ChangePassword(oldPassword, newPassword []byte) error {
 	if len(newPassword) == 0 {
 		return errors.New("新密码不能为空")
 	}
-	var salt, nonce, ciphertext []byte
-	if err := s.db.QueryRow("SELECT kdf_salt, nonce, encrypted_data_key FROM master_key WHERE id=1").Scan(&salt, &nonce, &ciphertext); err != nil {
-		return err
-	}
-	if err := validateMasterKey(salt, nonce, ciphertext); err != nil {
+	salt, nonce, ciphertext, err := readSealedKey(s.keyPath)
+	if err != nil {
 		return err
 	}
 	dataKey, err := unsealDataKey(oldPassword, salt, nonce, ciphertext)
@@ -160,14 +171,67 @@ func (s *Store) ChangePassword(oldPassword, newPassword []byte) error {
 	}
 	defer clear(dataKey)
 	if !bytes.Equal(dataKey, s.dataKey) {
-		return errors.New("主密钥与当前会话不一致")
+		return errors.New("数据库密钥与当前会话不一致")
 	}
 	salt, nonce, ciphertext, err = sealDataKey(newPassword, s.dataKey)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.Exec("UPDATE master_key SET kdf_salt=?, nonce=?, encrypted_data_key=? WHERE id=1", salt, nonce, ciphertext)
-	return err
+	return writeSealedKey(s.keyPath, salt, nonce, ciphertext)
+}
+
+func readSealedKey(path string) ([]byte, []byte, []byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if len(data) != sealedKeySize {
+		return nil, nil, nil, errors.New("数据库密钥文件格式无效")
+	}
+	salt := data[:saltSize]
+	nonce := data[saltSize : saltSize+24]
+	ciphertext := data[saltSize+24:]
+	return salt, nonce, ciphertext, nil
+}
+
+func writeSealedKey(path string, salt, nonce, ciphertext []byte) error {
+	data := make([]byte, 0, sealedKeySize)
+	data = append(data, salt...)
+	data = append(data, nonce...)
+	data = append(data, ciphertext...)
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".key-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+	if err = tmp.Chmod(0600); err == nil {
+		_, err = tmp.Write(data)
+	}
+	if err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	if err = os.Rename(tmpPath, path); err == nil {
+		return nil
+	}
+	// Windows 无法原子覆盖已有文件；保留旧文件直到新文件已经完整落盘。
+	backup := path + ".bak"
+	_ = os.Remove(backup)
+	if backupErr := os.Rename(path, backup); backupErr != nil {
+		return err
+	}
+	if replaceErr := os.Rename(tmpPath, path); replaceErr != nil {
+		_ = os.Rename(backup, path)
+		return replaceErr
+	}
+	_ = os.Remove(backup)
+	return nil
 }
 
 // Close 清理内存中的数据密钥并关闭数据库。

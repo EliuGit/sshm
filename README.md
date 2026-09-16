@@ -98,13 +98,7 @@ go build -o sshm.exe .
 默认数据库文件名为 `sshm.db`。程序会按以下顺序查找数据库：
 
 1. 可执行文件所在目录
-2. 用户配置目录下的 `sshm/sshm.db`
-
-可以使用 `SSHM_DB_PATH` 指定数据库文件或数据库目录：
-
-```bash
-SSHM_DB_PATH=/path/to/sshm.db ./sshm
-```
+2. 用户家目录下的 `.sshm/sshm.db`
 
 解锁时按 `Ctrl+S` 可以记住应用密码。以后启动时将自动解锁。文件损坏或应用密码修改后，程序会提示重新输入。
 

@@ -1,56 +1,41 @@
 package app
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 )
 
-const (
-	// DbPathEnvVarKey 是应用数据库路径环境变量。
-	DbPathEnvVarKey = "SSHM_DB_PATH"
-	// DbDefaultName 是应用数据库默认名称。
-	DbDefaultName = "sshm.db"
-)
+// DbDefaultName 是应用数据库默认名称。
+const DbDefaultName = "sshm.db"
 
 // dbPath 返回本次运行使用的数据库路径。
-// 显式配置的路径不可用时返回错误；未配置时查找已有数据库，否则返回用户配置目录中的默认路径。
+// 按可执行文件目录、用户家目录查找，均不存在时使用用户家目录中的默认路径。
 func dbPath() (string, error) {
-	if raw := os.Getenv(DbPathEnvVarKey); raw != "" {
-		info, err := os.Stat(raw)
-		if err != nil {
-			return "", fmt.Errorf("SSHM_DB_PATH 指向的路径不可用: %w", err)
-		}
-		if info.Mode().IsRegular() {
-			return raw, nil
-		}
-		if info.IsDir() {
-			return filepath.Join(raw, DbDefaultName), nil
-		}
-		return "", fmt.Errorf("SSHM_DB_PATH 不是文件或目录: %s", raw)
-	}
-
 	if path := findDB(); path != "" {
 		return path, nil
 	}
-	configDir, err := os.UserConfigDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(configDir, "sshm", DbDefaultName), nil
+	return homeDBPath()
 }
 
-// findDB 按可执行文件目录、用户配置目录的顺序查找已有数据库。
+// findDB 按可执行文件目录、用户家目录的顺序查找已有数据库。
 func findDB() string {
 	if executablePath, err := os.Executable(); err == nil {
 		if path := existingFile(filepath.Join(filepath.Dir(executablePath), DbDefaultName)); path != "" {
 			return path
 		}
 	}
-	if configDir, err := os.UserConfigDir(); err == nil {
-		return existingFile(filepath.Join(configDir, "sshm", DbDefaultName))
+	if path, err := homeDBPath(); err == nil {
+		return existingFile(path)
 	}
 	return ""
+}
+
+func homeDBPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".sshm", DbDefaultName), nil
 }
 
 func existingFile(path string) string {

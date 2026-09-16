@@ -45,11 +45,7 @@ func (s *Store) UpdateCredential(id int64, name, credentialType string, content 
 	if len(bytes.TrimSpace(content)) == 0 {
 		result, err = s.db.Exec("UPDATE credentials SET name=?,type=? WHERE id=?", name, credentialType, id)
 	} else {
-		nonce, ciphertext, encryptErr := s.Encrypt(content)
-		if encryptErr != nil {
-			return encryptErr
-		}
-		result, err = s.db.Exec("UPDATE credentials SET name=?,type=?,nonce=?,ciphertext=? WHERE id=?", name, credentialType, nonce, ciphertext, id)
+		result, err = s.db.Exec("UPDATE credentials SET name=?,type=?,content=? WHERE id=?", name, credentialType, content, id)
 	}
 	if err != nil {
 		return err
@@ -92,7 +88,7 @@ func (s *Store) DeleteCredential(id int64) error {
 	return tx.Commit()
 }
 
-// CreateCredential 加密并保存密码或私钥凭据。
+// CreateCredential 将密码或私钥保存到加密数据库。
 func (s *Store) CreateCredential(input NewCredential) (Credential, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" || len(bytes.TrimSpace(input.Content)) == 0 {
@@ -101,11 +97,7 @@ func (s *Store) CreateCredential(input NewCredential) (Credential, error) {
 	if input.Type != "passwd" && input.Type != "key" {
 		return Credential{}, errors.New("凭据类型必须是密码或私钥")
 	}
-	nonce, ciphertext, err := s.Encrypt(input.Content)
-	if err != nil {
-		return Credential{}, err
-	}
-	result, err := s.db.Exec("INSERT INTO credentials(name,type,nonce,ciphertext) VALUES(?,?,?,?)", input.Name, input.Type, nonce, ciphertext)
+	result, err := s.db.Exec("INSERT INTO credentials(name,type,content) VALUES(?,?,?)", input.Name, input.Type, input.Content)
 	if err != nil {
 		return Credential{}, err
 	}

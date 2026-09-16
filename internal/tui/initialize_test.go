@@ -61,6 +61,7 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 }
 
 func TestSavedPasswordFailureShowsRememberedPasswordMessage(t *testing.T) {
+	savedPath := useTempCache(t)
 	path := filepath.Join(t.TempDir(), "sshm.db")
 	store, err := repository.Initialize(path, []byte("secret"))
 	if err != nil {
@@ -68,14 +69,14 @@ func TestSavedPasswordFailureShowsRememberedPasswordMessage(t *testing.T) {
 	}
 	store.Close()
 
-	if err := os.WriteFile(savePath(path), []byte("stale"), 0600); err != nil {
+	if err := os.WriteFile(savedPath, []byte("stale"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	app := newApplicationModel(path, repository.Ready, []byte("wrong"), nil)
 	if app.initializing.err != "记住的密码已失效，请重新输入" {
 		t.Fatalf("记住密码错误提示 = %q", app.initializing.err)
 	}
-	if _, err := os.Stat(savePath(path)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(savedPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("失效的记住密码未删除")
 	}
 }
@@ -111,6 +112,7 @@ func TestUnlockShowsSimplePasswordErrorWithoutLabel(t *testing.T) {
 }
 
 func TestCtrlSUnlocksAndRemembersPassword(t *testing.T) {
+	useTempCache(t)
 	path := filepath.Join(t.TempDir(), "sshm.db")
 	store, err := repository.Initialize(path, []byte("secret"))
 	if err != nil {
@@ -129,7 +131,7 @@ func TestCtrlSUnlocksAndRemembersPassword(t *testing.T) {
 		t.Fatalf("解锁结果 = %#v", result)
 	}
 	defer result.store.Close()
-	saved, err := loadPassword(path)
+	saved, err := loadPassword()
 	if err != nil || string(saved) != "secret" {
 		t.Fatalf("记住的密码 = %q, %v", saved, err)
 	}
@@ -168,12 +170,13 @@ func TestInitializeEscReturnsSilentCancel(t *testing.T) {
 }
 
 func TestMainShortcutChangesPasswordAndRemovesRememberedPassword(t *testing.T) {
+	savedPath := useTempCache(t)
 	path := filepath.Join(t.TempDir(), "sshm.db")
 	store, err := repository.Initialize(path, []byte("old-password"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := savePassword(path, []byte("old-password")); err != nil {
+	if err := savePassword([]byte("old-password")); err != nil {
 		store.Close()
 		t.Fatal(err)
 	}
@@ -214,7 +217,7 @@ func TestMainShortcutChangesPasswordAndRemovesRememberedPassword(t *testing.T) {
 	if m.modal != nil {
 		t.Fatal("修改密码后未关闭弹窗")
 	}
-	if _, err := os.Stat(savePath(path)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(savedPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatal("修改密码后未删除记住的密码")
 	}
 	store.Close()

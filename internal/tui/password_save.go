@@ -15,16 +15,26 @@ import (
 )
 
 const (
-	saveFile    = "save.bin"
+	saveFile    = ".sshm_save"
 	saveMagic   = "SSRP"
 	saveVersion = 1
 	saveHeader  = len(saveMagic) + 1
 )
 
-func savePath(dbPath string) string { return filepath.Join(filepath.Dir(dbPath), saveFile) }
+func savePath() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cacheDir, saveFile), nil
+}
 
-func loadPassword(dbPath string) ([]byte, error) {
-	data, err := os.ReadFile(savePath(dbPath))
+func loadPassword() ([]byte, error) {
+	path, err := savePath()
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
@@ -35,7 +45,7 @@ func loadPassword(dbPath string) ([]byte, error) {
 	return decryptPassword(data, id)
 }
 
-func savePassword(dbPath string, password []byte) error {
+func savePassword(password []byte) error {
 	if len(password) == 0 {
 		return errors.New("记住的密码不能为空")
 	}
@@ -47,7 +57,10 @@ func savePassword(dbPath string, password []byte) error {
 	if err != nil {
 		return err
 	}
-	path := savePath(dbPath)
+	path, err := savePath()
+	if err != nil {
+		return err
+	}
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
@@ -111,8 +124,12 @@ func decryptPassword(data []byte, id string) ([]byte, error) {
 	return aead.Open(nil, data[saveHeader:nonceEnd], data[nonceEnd:], nil)
 }
 
-func removePassword(dbPath string) error {
-	err := os.Remove(savePath(dbPath))
+func removePassword() error {
+	path, err := savePath()
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil
 	}

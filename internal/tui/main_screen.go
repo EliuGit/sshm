@@ -194,7 +194,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if err := m.store.ChangePassword(oldPassword, newPassword); err != nil {
 					return err
 				}
-				_ = removePassword(m.path)
+				_ = removePassword()
 				return nil
 			})
 			return m, nil

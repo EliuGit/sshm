@@ -56,7 +56,7 @@ func RunApplication(path string, status repository.Status) error {
 	var saved []byte
 	var loadErr error
 	if status == repository.Ready {
-		saved, loadErr = loadPassword(path)
+		saved, loadErr = loadPassword()
 	}
 	app := newApplicationModel(path, status, saved, loadErr)
 	clear(saved)
@@ -92,7 +92,7 @@ func newApplicationModel(path string, status repository.Status, saved []byte, lo
 		rememberedInvalid = true
 	}
 	if rememberedInvalid {
-		_ = removePassword(path)
+		_ = removePassword()
 		m := newInitializeModel(path, initializeUnlock)
 		m.err = "记住的密码已失效，请重新输入"
 		return applicationModel{initializing: m}
@@ -269,7 +269,7 @@ func (m initializeModel) submit(remember bool) (tea.Model, tea.Cmd) {
 		} else {
 			store, err = repository.Unlock(m.path, bytes)
 			if err == nil && remember {
-				if err = savePassword(m.path, bytes); err != nil {
+				if err = savePassword(bytes); err != nil {
 					_ = store.Close()
 					store = nil
 					err = fmt.Errorf("记住密码失败: %w", err)

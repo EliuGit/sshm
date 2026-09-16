@@ -2,14 +2,19 @@ package app
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
-func TestDatabasePathRejectsMissingEnvironmentPath(t *testing.T) {
-	t.Setenv(DbPathEnvVarKey, filepath.Join(t.TempDir(), "missing"))
-	_, err := dbPath()
-	if err == nil || !strings.Contains(err.Error(), DbPathEnvVarKey) {
-		t.Fatalf("dbPath() error = %v", err)
+func TestHomeDatabasePath(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	path, err := homeDBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(home, ".sshm", DbDefaultName)
+	if path != want {
+		t.Fatalf("homeDBPath() = %q, want %q", path, want)
 	}
 }

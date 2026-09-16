@@ -26,23 +26,19 @@ func (s *Store) ListConnections() ([]Connection, error) {
 	return result, rows.Err()
 }
 
-// SSHConnection 返回指定连接及解密后的凭据内容。
+// SSHConnection 返回指定连接及凭据内容。
 // 调用方使用完凭据后必须立即清空返回的字节切片，避免明文长期驻留内存。
 func (s *Store) SSHConnection(id int64) (Connection, []byte, error) {
 	if id <= 0 {
 		return Connection{}, nil, errors.New("连接不存在")
 	}
 	var c Connection
-	var nonce, ciphertext []byte
-	err := s.db.QueryRow(`SELECT c.id, c.name, c.host, c.port, c.username, c.credential_id, cr.type, cr.name, c.use_count, c.last_used_at, c.remark, cr.nonce, cr.ciphertext
+	var credential []byte
+	err := s.db.QueryRow(`SELECT c.id, c.name, c.host, c.port, c.username, c.credential_id, cr.type, cr.name, c.use_count, c.last_used_at, c.remark, cr.content
 		FROM connections c JOIN credentials cr ON cr.id = c.credential_id WHERE c.id=?`, id).
-		Scan(&c.ID, &c.Name, &c.Host, &c.Port, &c.Username, &c.CredentialID, &c.Credential, &c.CredentialName, &c.UseCount, &c.LastUsedAt, &c.Remark, &nonce, &ciphertext)
+		Scan(&c.ID, &c.Name, &c.Host, &c.Port, &c.Username, &c.CredentialID, &c.Credential, &c.CredentialName, &c.UseCount, &c.LastUsedAt, &c.Remark, &credential)
 	if err != nil {
 		return Connection{}, nil, fmt.Errorf("读取连接凭据: %w", err)
-	}
-	credential, err := s.Decrypt(nonce, ciphertext)
-	if err != nil {
-		return Connection{}, nil, fmt.Errorf("解密连接凭据: %w", err)
 	}
 	return c, credential, nil
 }

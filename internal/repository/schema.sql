@@ -1,21 +1,11 @@
 PRAGMA foreign_keys = ON;
 
--- master_key 只保存由主密码加密后的数据密钥，Argon2id 参数固定在程序中。
-CREATE TABLE master_key (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
-    kdf_salt BLOB NOT NULL CHECK (typeof(kdf_salt) = 'blob' AND length(kdf_salt) = 16),
-    nonce BLOB NOT NULL CHECK (typeof(nonce) = 'blob' AND length(nonce) = 24),
-    encrypted_data_key BLOB NOT NULL CHECK (typeof(encrypted_data_key) = 'blob' AND length(encrypted_data_key) = 48),
-    create_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK (create_at >= 0)
-) STRICT;
-
--- credentials 中的密文由内存中的数据密钥使用 XChaCha20-Poly1305 加密。
+-- credentials 的内容由加密数据库统一保护，不再单独加密。
 CREATE TABLE credentials (
     id INTEGER PRIMARY KEY,
     name TEXT NOT NULL COLLATE NOCASE UNIQUE CHECK (length(trim(name)) > 0),
     type TEXT NOT NULL CHECK (type IN ('passwd', 'key')),
-    nonce BLOB NOT NULL CHECK (typeof(nonce) = 'blob' AND length(nonce) = 24),
-    ciphertext BLOB NOT NULL CHECK (typeof(ciphertext) = 'blob' AND length(ciphertext) >= 16),
+    content BLOB NOT NULL CHECK (typeof(content) = 'blob' AND length(content) > 0),
     create_at INTEGER NOT NULL DEFAULT (unixepoch()) CHECK (create_at >= 0)
 ) STRICT;
 

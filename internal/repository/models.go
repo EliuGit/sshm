@@ -64,4 +64,5 @@ const (
 type Store struct {
 	db      *sql.DB
 	dataKey []byte
+	keyPath string
 }
