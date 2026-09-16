@@ -60,7 +60,7 @@ func RunApplication(path string, status repository.Status) error {
 	}
 	app := newApplicationModel(path, status, saved, loadErr)
 	clear(saved)
-	final, err := tea.NewProgram(app).Run()
+	final, err := tea.NewProgram(app, tea.WithEnvironment(bubbleTeaEnvironment(os.Environ()))).Run()
 	if err != nil {
 		if app.main != nil && app.main.store != nil {
 			_ = app.main.store.Close()
@@ -72,6 +72,21 @@ func RunApplication(path string, status repository.Status) error {
 		_ = result.main.store.Close()
 	}
 	return result.result
+}
+
+// bubbleTeaEnvironment 让 SSH 会话也探测同步输出能力，实际启用仍以终端对 DEC 2026 模式的响应为准。
+// Bubble Tea 2.0.9 默认因 SSH_TTY 跳过探测；WT_SESSION 仅传给 Bubble Tea，不修改进程环境。
+func bubbleTeaEnvironment(env []string) []string {
+	var sshSession, windowsTerminal bool
+	for _, variable := range env {
+		name, _, _ := strings.Cut(variable, "=")
+		sshSession = sshSession || name == "SSH_TTY"
+		windowsTerminal = windowsTerminal || name == "WT_SESSION"
+	}
+	if sshSession && !windowsTerminal {
+		return append(env, "WT_SESSION=sshm")
+	}
+	return env
 }
 
 func newApplicationModel(path string, status repository.Status, saved []byte, loadErr error) applicationModel {

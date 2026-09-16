@@ -60,6 +60,21 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	}
 }
 
+func TestBubbleTeaEnvironmentQueriesSynchronizedOutputOverSSH(t *testing.T) {
+	remote := bubbleTeaEnvironment([]string{"TERM=xterm-256color", "SSH_TTY=/dev/pts/0"})
+	if remote[len(remote)-1] != "WT_SESSION=sshm" {
+		t.Fatalf("SSH 会话未启用同步输出探测: %v", remote)
+	}
+	local := []string{"TERM=xterm-256color"}
+	if got := bubbleTeaEnvironment(local); len(got) != len(local) {
+		t.Fatalf("本地会话环境被修改: %v", got)
+	}
+	forwarded := []string{"SSH_TTY=/dev/pts/0", "WT_SESSION=existing"}
+	if got := bubbleTeaEnvironment(forwarded); len(got) != len(forwarded) {
+		t.Fatalf("已有 WT_SESSION 被重复添加: %v", got)
+	}
+}
+
 func TestSavedPasswordFailureShowsRememberedPasswordMessage(t *testing.T) {
 	savedPath := useTempCache(t)
 	path := filepath.Join(t.TempDir(), "sshm.db")
