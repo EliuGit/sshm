@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"charm.land/bubbles/v2/textinput"
@@ -51,9 +52,15 @@ type applicationModel struct {
 	result       error
 }
 
-// RunApplication 在一次 TUI 会话中完成自动解锁、初始化和主界面运行。
-func RunApplication(path string, status repository.Status, savedPassword string) error {
-	app := newApplicationModel(path, status, savedPassword)
+// RunApplication 在一次 TUI 会话中完成记住密码解锁、初始化和主界面运行。
+func RunApplication(path string, status repository.Status) error {
+	var saved []byte
+	var loadErr error
+	if status == repository.Ready {
+		saved, loadErr = loadPassword(path)
+	}
+	app := newApplicationModel(path, status, saved, loadErr)
+	clear(saved)
 	final, err := tea.NewProgram(app).Run()
 	if err != nil {
 		if app.main != nil && app.main.store != nil {
@@ -68,24 +75,27 @@ func RunApplication(path string, status repository.Status, savedPassword string)
 	return result.result
 }
 
-func newApplicationModel(path string, status repository.Status, savedPassword string) applicationModel {
-	if status == repository.Ready && savedPassword != "" {
-		password := []byte(savedPassword)
-		store, err := repository.Unlock(path, password)
-		clear(password)
+func newApplicationModel(path string, status repository.Status, saved []byte, loadErr error) applicationModel {
+	rememberedInvalid := status == repository.Ready && loadErr != nil && !errors.Is(loadErr, os.ErrNotExist)
+	if status == repository.Ready && loadErr == nil {
+		store, err := repository.Unlock(path, saved)
 		if err == nil {
-			main, loadErr := newModel(store)
-			if loadErr != nil {
+			main, modelErr := newModel(store)
+			if modelErr != nil {
 				_ = store.Close()
-				return applicationModel{result: fmt.Errorf("读取连接列表: %w", loadErr)}
+				return applicationModel{result: fmt.Errorf("读取连接列表: %w", modelErr)}
 			}
 			return applicationModel{main: &main}
 		}
 		if !errors.Is(err, repository.ErrInvalidPassword) {
 			return applicationModel{initializing: initializeModel{path: path, mode: initializeUnlock, err: err.Error()}, result: err}
 		}
+		rememberedInvalid = true
+	}
+	if rememberedInvalid {
+		_ = removePassword(path)
 		m := newInitializeModel(path, initializeUnlock)
-		m.err = "环境变量中的密码不正确，请手动输入"
+		m.err = "记住的密码已失效，请重新输入"
 		return applicationModel{initializing: m}
 	}
 	mode := initializeUnlock
@@ -142,6 +152,9 @@ func (m applicationModel) View() tea.View {
 func newInitializeModel(path string, mode initializeMode) initializeModel {
 	m := initializeModel{path: path, mode: mode}
 	m.password = newFormInput("应用密码", 16)
+	if mode == initializeUnlock {
+		m.password.Placeholder = "Ctrl+S 解锁并记住密码"
+	}
 	m.password.EchoMode = textinput.EchoPassword
 	m.password.EchoCharacter = '•'
 	m.password.Focus()
@@ -226,8 +239,13 @@ func (m initializeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, nil
 		}
-	case "enter", "ctrl+s":
-		return m.submit()
+	case "ctrl+s":
+		if m.mode == initializeUnlock {
+			return m.submit(true)
+		}
+		return m.submit(false)
+	case "enter":
+		return m.submit(false)
 	}
 	var cmd tea.Cmd
 	input := m.focusedInput()
@@ -242,7 +260,7 @@ func (m *initializeModel) focusedInput() *textinput.Model {
 	return &m.password
 }
 
-func (m initializeModel) submit() (tea.Model, tea.Cmd) {
+func (m initializeModel) submit(remember bool) (tea.Model, tea.Cmd) {
 	password := m.password.Value()
 	if password == "" {
 		m.err = "密码不能为空"
@@ -268,6 +286,13 @@ func (m initializeModel) submit() (tea.Model, tea.Cmd) {
 			store, err = repository.Initialize(m.path, bytes)
 		} else {
 			store, err = repository.Unlock(m.path, bytes)
+			if err == nil && remember {
+				if err = savePassword(m.path, bytes); err != nil {
+					_ = store.Close()
+					store = nil
+					err = fmt.Errorf("记住密码失败: %w", err)
+				}
+			}
 		}
 		return initializeResultMsg{store: store, err: err}
 	}
@@ -283,6 +308,7 @@ func (m initializeModel) openPasswordChange() (tea.Model, tea.Cmd) {
 			_ = store.Close()
 			return nil, err
 		}
+		_ = removePassword(m.path)
 		return store, nil
 	})
 	m.modal = form

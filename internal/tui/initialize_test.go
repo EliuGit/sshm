@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,7 +42,7 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	}
 	defer store.Close()
 
-	app := newApplicationModel(path, repository.Ready, "")
+	app := newApplicationModel(path, repository.Ready, nil, os.ErrNotExist)
 	app.initializing.width, app.initializing.height = 100, 30
 	updated, cmd := app.Update(initializeResultMsg{store: store})
 	if cmd != nil {
@@ -56,7 +57,7 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	}
 }
 
-func TestSavedPasswordFailureShowsEnvironmentMessage(t *testing.T) {
+func TestSavedPasswordFailureShowsRememberedPasswordMessage(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sshm.db")
 	store, err := repository.Initialize(path, []byte("secret"))
 	if err != nil {
@@ -64,9 +65,15 @@ func TestSavedPasswordFailureShowsEnvironmentMessage(t *testing.T) {
 	}
 	store.Close()
 
-	app := newApplicationModel(path, repository.Ready, "wrong")
-	if app.initializing.err != "环境变量中的密码不正确，请手动输入" {
-		t.Fatalf("环境变量密码错误提示 = %q", app.initializing.err)
+	if err := os.WriteFile(savePath(path), []byte("stale"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	app := newApplicationModel(path, repository.Ready, []byte("wrong"), nil)
+	if app.initializing.err != "记住的密码已失效，请重新输入" {
+		t.Fatalf("记住密码错误提示 = %q", app.initializing.err)
+	}
+	if _, err := os.Stat(savePath(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("失效的记住密码未删除")
 	}
 }
 
@@ -93,6 +100,35 @@ func TestUnlockShowsSimplePasswordErrorWithoutLabel(t *testing.T) {
 	updated, _ = view.Update(tea.KeyPressMsg(tea.Key{Text: "x"}))
 	if updated.(initializeModel).err != "" {
 		t.Fatalf("键盘输入后未清除错误: %q", updated.(initializeModel).err)
+	}
+}
+
+func TestCtrlSUnlocksAndRemembersPassword(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sshm.db")
+	store, err := repository.Initialize(path, []byte("secret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.Close()
+
+	m := newInitializeModel(path, initializeUnlock)
+	m.password.SetValue("secret")
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl}))
+	if cmd == nil {
+		t.Fatal("Ctrl+S 未开始解锁")
+	}
+	result := cmd().(initializeResultMsg)
+	if result.err != nil || result.store == nil {
+		t.Fatalf("解锁结果 = %#v", result)
+	}
+	defer result.store.Close()
+	saved, err := loadPassword(path)
+	if err != nil || string(saved) != "secret" {
+		t.Fatalf("记住的密码 = %q, %v", saved, err)
+	}
+	clear(saved)
+	if !updated.(initializeModel).saving {
+		t.Fatal("Ctrl+S 后未进入保存状态")
 	}
 }
 
@@ -131,6 +167,9 @@ func TestUnlockShortcutChangesPasswordAndReturnsStore(t *testing.T) {
 		t.Fatal(err)
 	}
 	initial.Close()
+	if err := savePassword(path, []byte("old-password")); err != nil {
+		t.Fatal(err)
+	}
 
 	m := newInitializeModel(path, initializeUnlock)
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: 'p', Mod: tea.ModCtrl}))
@@ -152,6 +191,9 @@ func TestUnlockShortcutChangesPasswordAndReturnsStore(t *testing.T) {
 	m = final.(initializeModel)
 	if m.store == nil || m.result != nil {
 		t.Fatalf("修改密码后未完成解锁: store=%v err=%v", m.store, m.result)
+	}
+	if _, err := os.Stat(savePath(path)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("修改密码后未删除记住的密码")
 	}
 	m.store.Close()
 	if store, err := repository.Unlock(path, []byte("new-password")); err != nil {
