@@ -14,7 +14,7 @@ var (
 	folderStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
 	fileStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
 	selectedMarkStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#eeb64e")).Foreground(lipgloss.Color("#4e9af1"))
-	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4e9af1"))
+	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#Fefefe"))
 )
 
 var transferBorder = lipgloss.RoundedBorder()

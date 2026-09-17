@@ -28,7 +28,7 @@ var (
 	accentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#00b3e4")).Bold(true)
 	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B6F78"))
 	borderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#5C6068"))
-	labelStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#babbbf"))
+	labelStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#8d8e92"))
 	selectedStyle   = lipgloss.NewStyle().Background(selectedColor).Foreground(lipgloss.Color("#FFFFFF"))
 	plainStyle      = lipgloss.NewStyle().Foreground(textColor)
 )
