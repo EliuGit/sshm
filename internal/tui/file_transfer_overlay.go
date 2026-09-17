@@ -216,7 +216,7 @@ func (m transferModel) renderOverlay() string {
 			item("n/s/t", "按名称/大小/时间排序"),
 			item("d", "删除") + separator + item("r", "重命名"),
 			item("a", "新建文件夹"),
-			item("Ctrl+C", "清空/取消") + separator + item("q/Esc", "关闭/返回"),
+			item("Ctrl+C/Esc", "清空/取消") + separator + item("q", "关闭"),
 		}, "\n")
 		return formDialog("文件传输帮助", body, "?/Esc 关闭帮助", mutedStyle, modalTitleStyle)
 	default:

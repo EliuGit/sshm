@@ -180,6 +180,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 		switch msg.String() {
+		case "esc":
+			connections := m.visibleConnections()
+			focusedID, hasFocused := int64(0), m.selected >= 0 && m.selected < len(connections)
+			if hasFocused {
+				focusedID = connections[m.selected].id
+			}
+			m.searchInput.Reset()
+			if hasFocused {
+				for i, connection := range m.visibleConnections() {
+					if connection.id == focusedID {
+						m.selected = i
+						break
+					}
+				}
+			}
+			return m, nil
 		case "q":
 			return m, tea.Quit
 		case "a":

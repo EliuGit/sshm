@@ -145,7 +145,7 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		return m.handleOverlay(key)
 	}
 	if m.cancelRead != nil {
-		if key.String() == "esc" {
+		if key.String() == "q" {
 			m.cancelRemoteRead()
 			m.closeSFTP()
 			return nil, nil
@@ -159,7 +159,7 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 	if m.focus == searchFocus {
 		return m.updateSearch(key)
 	}
-	if key.String() == "ctrl+c" {
+	if key.String() == "ctrl+c" || key.String() == "esc" {
 		focused, hasFocused := m.currentEntry()
 		m.search.Reset()
 		clear(m.selected)
@@ -170,7 +170,7 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 	}
 
 	switch key.String() {
-	case "esc", "q":
+	case "q":
 		m.closeSFTP()
 		return nil, nil
 	case "ctrl+g":

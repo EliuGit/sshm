@@ -181,7 +181,7 @@ func TestFileTransferViewLayout(t *testing.T) {
 		}
 	}
 	plain := ansi.Strip(view)
-	for _, content := range []string{"本地", "🔍", "筛选文件...", "📁", "📄", "1/2 切换", "y/p 复制/粘贴", "q/Esc 关闭", "? 帮助", "已读取"} {
+	for _, content := range []string{"本地", "🔍", "筛选文件...", "📁", "📄", "1/2 切换", "y/p 复制/粘贴", "q 关闭", "? 帮助", "已读取"} {
 		if !strings.Contains(plain, content) {
 			t.Fatalf("文件传输弹窗缺少 %q: %q", content, plain)
 		}
@@ -764,12 +764,15 @@ func TestFileTransferSearchEscClearsAndBlurs(t *testing.T) {
 	}
 }
 
-func TestFileTransferEscClosesEvenWithFilter(t *testing.T) {
+func TestFileTransferEscClearsWithoutClosing(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
 	m.search.SetValue("readme")
+	m.selected["README.md"] = struct{}{}
 	updated, _ := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
-	if updated != nil {
-		t.Fatalf("存在过滤值时 Esc 未关闭弹窗: %#v", updated)
+	m = updated.(transferModel)
+	focused, ok := m.currentEntry()
+	if m.search.Value() != "" || len(m.selected) != 0 || !ok || focused.name != "README.md" {
+		t.Fatalf("列表焦点下 Esc 未清除筛选和多选并保留焦点: %#v", m)
 	}
 }
 
@@ -786,6 +789,18 @@ func TestFileTransferQClosesFromList(t *testing.T) {
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "q"}))
 	if updated == nil || updated.(transferModel).search.Value() != "q" {
 		t.Fatalf("筛选焦点下 q 错误关闭弹窗: %#v", updated)
+	}
+
+	m = newTestTransfer(t, connectionRow{})
+	cancelled := false
+	m.cancelRead = func() { cancelled = true }
+	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	if updated == nil || cancelled {
+		t.Fatalf("远程读取中 Esc 错误关闭弹窗: updated=%#v cancelled=%v", updated, cancelled)
+	}
+	updated, _ = updated.(transferModel).Update(tea.KeyPressMsg(tea.Key{Text: "q"}))
+	if updated != nil || !cancelled {
+		t.Fatalf("远程读取中 q 未关闭弹窗: updated=%#v cancelled=%v", updated, cancelled)
 	}
 }
 

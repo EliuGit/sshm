@@ -48,7 +48,7 @@ func (m transferModel) View() string {
 	}
 
 	lines = append(lines, transferSeparator(width))
-	footer := mutedStyle.Render("1/2 切换 | y/p 复制/粘贴 | a 新建 | q/Esc 关闭 | ? 帮助")
+	footer := mutedStyle.Render("1/2 切换 | y/p 复制/粘贴 | a 新建 | q 关闭 | ? 帮助")
 	lines = append(lines, transferRow(fit(" "+footer, contentWidth), contentWidth))
 	lines = append(lines, transferFrame(transferBorder.BottomLeft, transferBorder.Bottom, transferBorder.BottomRight, width))
 	view := strings.Join(lines, "\n")

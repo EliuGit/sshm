@@ -152,6 +152,24 @@ func TestCtrlCClearsMainSearch(t *testing.T) {
 	}
 }
 
+func TestEscClearsMainSearchFromList(t *testing.T) {
+	m := model{
+		connections: []connectionRow{
+			{id: 1, name: "生产", useCount: 2},
+			{id: 2, name: "开发", useCount: 1},
+			{id: 3, name: "备份", useCount: 3},
+		},
+		searchInput: newSearchInput(), searchReady: true,
+	}
+	m.searchInput.SetValue("开发")
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: tea.KeyEscape}))
+	m = updated.(model)
+	connections := m.visibleConnections()
+	if cmd != nil || m.searchInput.Value() != "" || m.searchFocused || connections[m.selected].id != 2 {
+		t.Fatalf("列表焦点下 Esc 清空主搜索失败: value=%q selected=%d focused=%v cmd=%v", m.searchInput.Value(), m.selected, m.searchFocused, cmd)
+	}
+}
+
 func TestSearchFiltersAndSortToggles(t *testing.T) {
 	m := model{connections: testConnections, searchInput: newSearchInput(), searchReady: true}
 	m.searchInput.SetValue("example.com")
