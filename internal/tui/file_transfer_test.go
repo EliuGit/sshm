@@ -432,7 +432,7 @@ func TestFileTransferHelpListsAllShortcuts(t *testing.T) {
 		t.Fatalf("? 未打开帮助弹窗: overlay=%d cmd=%v", m.overlay.kind, cmd)
 	}
 	view := ansi.Strip(m.View())
-	for _, shortcut := range []string{"1/2", "↑/↓、j/k", "h/Backspace", "l/Enter", "Space", "y/p", "/ 筛选", "Ctrl+G", "n/s/t", "d 删除", "r 重命名", "a 新建文件夹", "Ctrl+C", "Esc"} {
+	for _, shortcut := range []string{"1/2", "↑/↓、j/k", "h/Backspace", "l/Enter", "Space", "Ctrl+A", "y/p", "/ 筛选", "Ctrl+G", "n/s/t", "d 删除", "r 重命名", "a 新建文件夹", "Ctrl+C", "Esc"} {
 		if !strings.Contains(view, shortcut) {
 			t.Fatalf("帮助弹窗缺少 %q: %q", shortcut, view)
 		}
@@ -722,8 +722,30 @@ func TestFileTransferListFocusClearsFilter(t *testing.T) {
 	m.selected["README.md"] = struct{}{}
 	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
 	m, ok := updated.(transferModel)
-	if !ok || cmd != nil || m.search.Value() != "" || m.cursor != 0 || len(m.selected) != 0 {
+	focused, hasFocused := m.currentEntry()
+	if !ok || cmd != nil || m.search.Value() != "" || len(m.selected) != 0 || !hasFocused || focused.name != "README.md" {
 		t.Fatalf("列表焦点下 Ctrl+C 未取消过滤: model=%#v cmd=%v", updated, cmd)
+	}
+
+	m.selected["README.md"] = struct{}{}
+	m.cursor = 2
+	updated, cmd = m.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
+	m = updated.(transferModel)
+	if cmd != nil || len(m.selected) != 0 || m.cursor != 2 {
+		t.Fatalf("列表焦点下 Ctrl+C 未取消多选: selected=%v cursor=%d cmd=%v", m.selected, m.cursor, cmd)
+	}
+}
+
+func TestFileTransferSelectsAllVisibleEntries(t *testing.T) {
+	m := newTestTransfer(t, connectionRow{})
+	m.search.SetValue("readme")
+	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Code: 'a', Mod: tea.ModCtrl}))
+	m = updated.(transferModel)
+	if cmd != nil || len(m.selected) != 1 {
+		t.Fatalf("Ctrl+A 未全选当前筛选结果: selected=%v cmd=%v", m.selected, cmd)
+	}
+	if _, ok := m.selected["README.md"]; !ok {
+		t.Fatalf("Ctrl+A 选择了错误项目: %v", m.selected)
 	}
 }
 

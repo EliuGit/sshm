@@ -8,13 +8,13 @@ import (
 
 var (
 	localTagColor      = lipgloss.Color("#1473E6")
-	remoteTagColor     = lipgloss.Color("#7F5AF0")
+	remoteTagColor     = lipgloss.Color("#e06c75")
 	localTagStyle      = lipgloss.NewStyle().Background(localTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
 	remoteTagStyle     = lipgloss.NewStyle().Background(remoteTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
 	folderStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
 	fileStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
-	selectedMarkStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#007ea1")).Foreground(lipgloss.Color("#00b3e4"))
-	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4e9af1ff"))
+	selectedMarkStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#eeb64e")).Foreground(lipgloss.Color("#4e9af1"))
+	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#4e9af1"))
 )
 
 var transferBorder = lipgloss.RoundedBorder()

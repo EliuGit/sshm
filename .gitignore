@@ -10,7 +10,8 @@
 *.exe
 *.test
 *.out
-/sshm
+/sshm*
+AGENTS.md
 
 # 本地环境变量
 .env
@@ -22,3 +23,5 @@
 .vscode/
 .DS_Store
 Thumbs.db
+/cmd
+migrate

@@ -159,10 +159,13 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 	if m.focus == searchFocus {
 		return m.updateSearch(key)
 	}
-	if m.search.Value() != "" && key.String() == "ctrl+c" {
+	if key.String() == "ctrl+c" {
+		focused, hasFocused := m.currentEntry()
 		m.search.Reset()
-		m.cursor = 0
 		clear(m.selected)
+		if hasFocused {
+			m.focusEntry(focused.name)
+		}
 		return m, nil
 	}
 
@@ -196,6 +199,10 @@ func (m transferModel) Update(msg tea.Msg) (modalModel, tea.Cmd) {
 		return m, m.enterDirectory()
 	case "space":
 		m.toggleSelection()
+	case "ctrl+a":
+		for _, entry := range m.visibleEntries() {
+			m.selected[entry.name] = struct{}{}
+		}
 	case "y":
 		m.copySelection()
 	case "p":

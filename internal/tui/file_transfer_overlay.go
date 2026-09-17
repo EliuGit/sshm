@@ -210,7 +210,8 @@ func (m transferModel) renderOverlay() string {
 		body := strings.Join([]string{
 			item("1/2", "切换本地/远程") + separator + item("↑/↓、j/k", "移动"),
 			item("h/Backspace", "返回上级") + separator + item("l/Enter", "进入目录"),
-			item("Space", "多选") + separator + item("y/p", "复制/粘贴"),
+			item("Space", "多选") + separator + item("Ctrl+A", "全选当前结果"),
+			item("y/p", "复制/粘贴"),
 			item("/", "筛选") + separator + item("Ctrl+G", "跳转"),
 			item("n/s/t", "按名称/大小/时间排序"),
 			item("d", "删除") + separator + item("r", "重命名"),
