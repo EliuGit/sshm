@@ -342,7 +342,7 @@ func TestFileTransferSeparatorsAndSelectionBackground(t *testing.T) {
 	if iconAt < 0 || strings.LastIndex(list[1][:iconAt], "\x1b[m") < strings.LastIndex(list[1][:iconAt], "48;2;") {
 		t.Fatalf("多选背景未在光标列结束: %q", list[1])
 	}
-	if !strings.Contains(list[1], "38;2;0;179;228;48;2;") || !strings.HasPrefix(ansi.Strip(list[1]), "> 📁") {
+	if !strings.HasPrefix(list[1], selectedMarkStyle.Render(">")+" ") || !strings.HasPrefix(ansi.Strip(list[1]), "> 📁") {
 		t.Fatalf("光标经过多选行时改变了 > 的颜色: %q", list[1])
 	}
 }
