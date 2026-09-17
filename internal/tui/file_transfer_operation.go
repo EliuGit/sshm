@@ -544,9 +544,10 @@ func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 		m.overlay.error = "远程连接不可用"
 		return m, nil
 	}
-	oldName, newName := m.overlay.renameOld, strings.TrimSpace(m.overlay.renameInput.Value())
-	if newName == "" || newName == "." || newName == ".." || path.Base(newName) != newName || strings.Contains(newName, "/") {
-		m.overlay.error = "名称不能包含路径且不能为空"
+	oldName := m.overlay.renameOld
+	newName, err := normalizeName(m.overlay.renameInput.Value())
+	if err != nil {
+		m.overlay.error = err.Error()
 		return m, nil
 	}
 	if newName == oldName {
@@ -571,11 +572,13 @@ func (m transferModel) startRemoteRename() (modalModel, tea.Cmd) {
 	return m.startTask(task, "重命名", []string{oldName}, ctx)
 }
 
-func validName(name string) error {
+// normalizeName 清理并校验本地、远程文件操作共用的单个名称。
+func normalizeName(name string) (string, error) {
+	name = strings.TrimSpace(name)
 	if name == "" || name == "." || name == ".." || filepath.Base(name) != name || strings.ContainsAny(name, `/\\`) {
-		return errors.New("名称不能包含路径且不能为空")
+		return "", errors.New("名称不能包含路径且不能为空")
 	}
-	return nil
+	return name, nil
 }
 
 func (m transferModel) startCreate(name string) (modalModel, tea.Cmd) {
@@ -890,19 +893,17 @@ func planLocalTargets(targetDir string, sources []string) ([]string, error) {
 	return names, nil
 }
 
-// renameLocalEntry 只接受单个文件名，并拒绝覆盖目录内已有项目。
+// renameLocal 只接受单个文件名，并拒绝覆盖目录内已有项目。
 func renameLocal(directory, oldName, newName string) error {
-	if strings.TrimSpace(newName) == "" {
-		return errors.New("名称不能为空")
-	}
-	if newName == "." || newName == ".." || filepath.Base(newName) != newName || strings.ContainsAny(newName, `/\`) {
-		return errors.New("名称不能包含路径")
+	newName, err := normalizeName(newName)
+	if err != nil {
+		return err
 	}
 	if newName == oldName {
 		return nil
 	}
 	target := filepath.Join(directory, newName)
-	if _, err := os.Lstat(target); err == nil {
+	if _, err = os.Lstat(target); err == nil {
 		return errors.New("目标名称已存在")
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err

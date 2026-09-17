@@ -7,11 +7,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 
 	"github.com/denisbrodbeck/machineid"
 	"golang.org/x/crypto/chacha20poly1305"
+
+	"sshm/internal/share"
 )
 
 const (
@@ -64,32 +65,7 @@ func savePassword(password []byte) error {
 	if err = os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".save-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(data)
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(tmpPath, path); err == nil {
-		return nil
-	}
-	if runtime.GOOS != "windows" {
-		return err
-	}
-	// Windows 无法直接覆盖已有文件，删除后重命名作为兼容路径。
-	if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-		return err
-	}
-	return os.Rename(tmpPath, path)
+	return share.WriteSecretFile(path, data)
 }
 
 func encryptPassword(password []byte, id string) ([]byte, error) {

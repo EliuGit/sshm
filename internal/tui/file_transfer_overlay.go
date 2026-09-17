@@ -122,11 +122,16 @@ func (m transferModel) handleOverlay(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 			if m.location == remoteSide {
 				return m.startRemoteRename()
 			}
-			if err := renameLocal(m.localPath, m.overlay.renameOld, m.overlay.renameInput.Value()); err != nil {
+			newName, err := normalizeName(m.overlay.renameInput.Value())
+			if err != nil {
 				m.overlay.error = err.Error()
 				return m, nil
 			}
-			oldName, newName := m.overlay.renameOld, m.overlay.renameInput.Value()
+			if err = renameLocal(m.localPath, m.overlay.renameOld, newName); err != nil {
+				m.overlay.error = err.Error()
+				return m, nil
+			}
+			oldName := m.overlay.renameOld
 			if m.atClipboardSource() {
 				for index := range m.clipboard.entries {
 					if m.clipboard.entries[index].name == oldName {
@@ -158,8 +163,8 @@ func (m transferModel) handleOverlay(key tea.KeyPressMsg) (modalModel, tea.Cmd) 
 			m.overlay.renameInput.Blur()
 			m.overlay = transferOverlay{}
 		case "enter":
-			name := strings.TrimSpace(m.overlay.renameInput.Value())
-			if err := validName(name); err != nil {
+			name, err := normalizeName(m.overlay.renameInput.Value())
+			if err != nil {
 				m.overlay.error = err.Error()
 				return m, nil
 			}

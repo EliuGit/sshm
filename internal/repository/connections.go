@@ -59,23 +59,32 @@ func (s *Store) MarkUsed(id int64) error {
 	return nil
 }
 
-// UpdateConnection 更新连接字段，并返回更新后的连接摘要。
-func (s *Store) UpdateConnection(id int64, input NewConnection) (Connection, error) {
-	if id <= 0 {
-		return Connection{}, errors.New("连接不存在")
-	}
+// normalizeConnection 统一清理并校验新增、更新连接时使用的字段。
+func normalizeConnection(input NewConnection) (NewConnection, error) {
 	input.Name = strings.TrimSpace(input.Name)
 	input.Host = strings.TrimSpace(input.Host)
 	input.Username = strings.TrimSpace(input.Username)
 	input.Remark = strings.TrimSpace(input.Remark)
 	if input.Name == "" || input.Host == "" || input.Username == "" {
-		return Connection{}, errors.New("名称、主机和用户不能为空")
+		return NewConnection{}, errors.New("名称、主机和用户不能为空")
 	}
 	if input.Port < 1 || input.Port > 65535 {
-		return Connection{}, errors.New("端口必须在 1 到 65535 之间")
+		return NewConnection{}, errors.New("端口必须在 1 到 65535 之间")
 	}
 	if input.CredentialID <= 0 {
-		return Connection{}, errors.New("请选择凭据")
+		return NewConnection{}, errors.New("请选择凭据")
+	}
+	return input, nil
+}
+
+// UpdateConnection 更新连接字段，并返回更新后的连接摘要。
+func (s *Store) UpdateConnection(id int64, input NewConnection) (Connection, error) {
+	if id <= 0 {
+		return Connection{}, errors.New("连接不存在")
+	}
+	input, err := normalizeConnection(input)
+	if err != nil {
+		return Connection{}, err
 	}
 	var c Connection
 	if err := s.db.QueryRow("SELECT use_count,last_used_at FROM connections WHERE id=?", id).Scan(&c.UseCount, &c.LastUsedAt); err != nil {
@@ -123,18 +132,9 @@ func (s *Store) DeleteConnection(id int64) error {
 
 // CreateConnection 创建引用已有凭据的连接。
 func (s *Store) CreateConnection(input NewConnection) (Connection, error) {
-	input.Name = strings.TrimSpace(input.Name)
-	input.Host = strings.TrimSpace(input.Host)
-	input.Username = strings.TrimSpace(input.Username)
-	input.Remark = strings.TrimSpace(input.Remark)
-	if input.Name == "" || input.Host == "" || input.Username == "" {
-		return Connection{}, errors.New("名称、主机和用户不能为空")
-	}
-	if input.Port < 1 || input.Port > 65535 {
-		return Connection{}, errors.New("端口必须在 1 到 65535 之间")
-	}
-	if input.CredentialID <= 0 {
-		return Connection{}, errors.New("请选择凭据")
+	input, err := normalizeConnection(input)
+	if err != nil {
+		return Connection{}, err
 	}
 	tx, err := s.db.Begin()
 	if err != nil {

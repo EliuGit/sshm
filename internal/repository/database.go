@@ -14,6 +14,8 @@ import (
 	"github.com/ncruces/go-sqlite3"
 	"github.com/ncruces/go-sqlite3/driver"
 	_ "github.com/ncruces/go-sqlite3/vfs/adiantum"
+
+	"sshm/internal/share"
 )
 
 //go:embed schema.sql
@@ -199,39 +201,7 @@ func writeSealedKey(path string, salt, nonce, ciphertext []byte) error {
 	data = append(data, salt...)
 	data = append(data, nonce...)
 	data = append(data, ciphertext...)
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".key-*.tmp")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer os.Remove(tmpPath)
-	if err = tmp.Chmod(0600); err == nil {
-		_, err = tmp.Write(data)
-	}
-	if err == nil {
-		err = tmp.Sync()
-	}
-	if closeErr := tmp.Close(); err == nil {
-		err = closeErr
-	}
-	if err != nil {
-		return err
-	}
-	if err = os.Rename(tmpPath, path); err == nil {
-		return nil
-	}
-	// Windows 无法原子覆盖已有文件；保留旧文件直到新文件已经完整落盘。
-	backup := path + ".bak"
-	_ = os.Remove(backup)
-	if backupErr := os.Rename(path, backup); backupErr != nil {
-		return err
-	}
-	if replaceErr := os.Rename(tmpPath, path); replaceErr != nil {
-		_ = os.Rename(backup, path)
-		return replaceErr
-	}
-	_ = os.Remove(backup)
-	return nil
+	return share.WriteSecretFile(path, data)
 }
 
 // Close 清理内存中的数据密钥并关闭数据库。

@@ -953,10 +953,16 @@ func TestConflictNameAndRenameValidation(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(directory, "exists"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"", "../escape", "exists"} {
+	for _, name := range []string{"", ".", "..", "../escape", `path\escape`, "exists"} {
 		if err := renameLocal(directory, "old", name); err == nil {
 			t.Fatalf("重命名错误地接受 %q", name)
 		}
+	}
+	if err := renameLocal(directory, "old", " renamed "); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "renamed")); err != nil {
+		t.Fatalf("去除首尾空格后的目标不存在: %v", err)
 	}
 }
 

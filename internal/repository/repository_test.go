@@ -238,15 +238,18 @@ func TestUpdateAndDeleteConnection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	connection, err := store.CreateConnection(NewConnection{Name: "旧名称", Host: "old", Port: 22, Username: "root", CredentialID: credential.ID})
+	connection, err := store.CreateConnection(NewConnection{Name: " 旧名称 ", Host: " old ", Port: 22, Username: " root ", CredentialID: credential.ID, Remark: " 初始备注 "})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if connection.Name != "旧名称" || connection.Host != "old" || connection.Username != "root" || connection.Remark != "初始备注" {
+		t.Fatalf("新增连接未规范化 = %#v", connection)
 	}
 	if err := store.MarkUsed(connection.ID); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := store.UpdateConnection(connection.ID, NewConnection{Name: "新名称", Host: "new", Port: 2222, Username: "admin", CredentialID: credential.ID, Remark: "备注"})
-	if err != nil || updated.Name != "新名称" || updated.Port != 2222 || updated.UseCount != 1 || !updated.LastUsedAt.Valid {
+	updated, err := store.UpdateConnection(connection.ID, NewConnection{Name: " 新名称 ", Host: " new ", Port: 2222, Username: " admin ", CredentialID: credential.ID, Remark: " 备注 "})
+	if err != nil || updated.Name != "新名称" || updated.Host != "new" || updated.Username != "admin" || updated.Remark != "备注" || updated.Port != 2222 || updated.UseCount != 1 || !updated.LastUsedAt.Valid {
 		t.Fatalf("更新连接 = %#v, %v", updated, err)
 	}
 	if err := store.DeleteConnection(connection.ID); err != nil {
