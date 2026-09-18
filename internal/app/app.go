@@ -12,17 +12,17 @@ import (
 func Run() error {
 	path, err := dbPath()
 	if err != nil {
-		return fmt.Errorf("initialize sshm: %w", err)
+		return fmt.Errorf("初始化应用失败: %w", err)
 	}
 	status, err := repository.Inspect(path)
 	if err != nil {
-		return fmt.Errorf("initialize sshm: %w", err)
+		return fmt.Errorf("初始化应用失败: %w", err)
 	}
 	if err := tui.RunApplication(path, status); err != nil {
 		if errors.Is(err, tui.ErrInitializationCanceled) {
 			return nil
 		}
-		return fmt.Errorf("start sshm: %w", err)
+		return fmt.Errorf("启动应用失败: %w", err)
 	}
 	return nil
 }

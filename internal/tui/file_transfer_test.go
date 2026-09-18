@@ -67,6 +67,21 @@ func TestFileTransferAppliesRemoteDirectoryResult(t *testing.T) {
 		t.Fatalf("远程跳转后状态错误: focus=%d selected=%v entries=%v", m.focus, m.selected, m.remoteEntries)
 	}
 
+	updated, _ = m.Update(remoteDirMsg{
+		path: "/home/tester/projects", focus: "report_1.txt", selected: []string{"data_1", "report_1.txt"},
+		entries: []transferEntry{{name: "data_1", dir: true}, {name: "report_1.txt"}},
+	})
+	m = updated.(transferModel)
+	focused, ok := m.currentEntry()
+	if !ok || focused.name != "report_1.txt" || len(m.selected) != 2 {
+		t.Fatalf("远程粘贴刷新后未选中目标或聚焦最后一项: focused=%#v selected=%v", focused, m.selected)
+	}
+	for _, name := range []string{"data_1", "report_1.txt"} {
+		if _, ok := m.selected[name]; !ok {
+			t.Fatalf("远程粘贴目标 %q 未选中: %v", name, m.selected)
+		}
+	}
+
 	m.cancelRead = func() {}
 	m.focus = addressFocus
 	m.address.SetValue("missing")
@@ -181,7 +196,7 @@ func TestFileTransferViewLayout(t *testing.T) {
 		}
 	}
 	plain := ansi.Strip(view)
-	for _, content := range []string{"本地", "🔍", "筛选文件...", "📁", "📄", "1/2 切换", "y/p 复制/粘贴", "q 关闭", "? 帮助", "已读取"} {
+	for _, content := range []string{"本地", transferSearchIcon, "筛选文件...", transferFolderIcon, "", "", "", "1/2 切换", "y/p 复制/粘贴", "q 关闭", "? 帮助", "已读取"} {
 		if !strings.Contains(plain, content) {
 			t.Fatalf("文件传输弹窗缺少 %q: %q", content, plain)
 		}
@@ -196,7 +211,7 @@ func TestFileTransferViewLayout(t *testing.T) {
 	if remote := ansi.Strip(m.renderHeader(78)); !strings.Contains(remote, " 远程 ") {
 		t.Fatalf("远程标签未渲染为胶囊: %q", remote)
 	}
-	if !strings.Contains(lines[3], "🔍") || !strings.Contains(lines[4], "📁") {
+	if !strings.Contains(lines[3], transferSearchIcon) || !strings.Contains(lines[4], transferFolderIcon) {
 		t.Fatalf("筛选框和文件列表之间存在间隔: %q", lines[3:5])
 	}
 	if localTagStyle.GetBackground() == remoteTagStyle.GetBackground() {
@@ -311,8 +326,27 @@ func TestFileTransferDetailsUseSectionSpacing(t *testing.T) {
 	}
 	m.clipboard.entries = []transferEntry{{name: "downloads", dir: true}, {name: "server.log"}}
 	view = ansi.Strip(strings.Join(m.renderDetails(25, 16), "\n"))
-	if !strings.Contains(view, "📁 downloads") || !strings.Contains(view, "📄 server.log") || strings.Contains(view, "复制 ·") {
+	if !strings.Contains(view, transferFolderIcon+" downloads") || !strings.Contains(view, " server.log") || strings.Contains(view, "复制 ·") {
 		t.Fatalf("剪贴板未显示文件类型图标和名称: %q", view)
+	}
+}
+
+func TestFileTransferIconsUseExtensions(t *testing.T) {
+	for _, test := range []struct {
+		name, glyph string
+	}{
+		{"main.go", "\ue627"},
+		{"photo.png", "\uf1c5"},
+		{"archive.tar.gz", "\uf410"},
+		{"README", transferFileIcon},
+	} {
+		got := ansi.Strip(renderTransferEntryIcon(transferEntry{name: test.name}))
+		if got != test.glyph {
+			t.Fatalf("%s 图标 = %q，want %q", test.name, got, test.glyph)
+		}
+		if ansi.StringWidth(got) != 1 {
+			t.Fatalf("%s 图标宽度 = %d，want 1", test.name, ansi.StringWidth(got))
+		}
 	}
 }
 
@@ -335,15 +369,20 @@ func TestFileTransferSeparatorsAndSelectionBackground(t *testing.T) {
 		t.Fatalf("底部分隔线未保留两端缺口: %q", plain)
 	}
 	list := m.renderList(51, 10)
-	if !strings.Contains(list[1], "48;2;") || strings.Contains(list[2], "48;2;") {
-		t.Fatalf("多选背景未限制在单行: selected=%q next=%q", list[1], list[2])
+	if !strings.Contains(list[1], "48;2;65;69;76") || strings.Contains(list[2], "48;2;65;69;76") {
+		t.Fatalf("多选背景未限制在选中行: selected=%q next=%q", list[1], list[2])
 	}
-	iconAt := strings.Index(list[1], "📁")
-	if iconAt < 0 || strings.LastIndex(list[1][:iconAt], "\x1b[m") < strings.LastIndex(list[1][:iconAt], "48;2;") {
-		t.Fatalf("多选背景未在光标列结束: %q", list[1])
+	if !strings.Contains(list[1], "38;2;229;192;123") || !strings.Contains(list[1], "38;2;0;179;228") {
+		t.Fatalf("多选背景改变了图标或焦点前景色: %q", list[1])
 	}
-	if !strings.HasPrefix(list[1], selectedMarkStyle.Render(">")+" ") || !strings.HasPrefix(ansi.Strip(list[1]), "> 📁") {
-		t.Fatalf("光标经过多选行时改变了 > 的颜色: %q", list[1])
+	selected, unselected := ansi.Strip(list[1]), ansi.Strip(list[2])
+	if !strings.HasPrefix(selected, "> "+transferFolderIcon) || !strings.HasSuffix(selected, "") || !strings.HasPrefix(unselected, "   "+transferFolderIcon) {
+		t.Fatalf("多选胶囊行格式错误: selected=%q unselected=%q", selected, unselected)
+	}
+	selectedIcon := strings.Index(selected, transferFolderIcon)
+	unselectedIcon := strings.Index(unselected, transferFolderIcon)
+	if selectedIcon < 0 || unselectedIcon < 0 || ansi.StringWidth(selected[:selectedIcon]) != ansi.StringWidth(unselected[:unselectedIcon]) {
+		t.Fatalf("多选改变了主体内容列: selected=%q unselected=%q", selected, unselected)
 	}
 }
 
@@ -365,7 +404,7 @@ func TestFileTransferClipboardDoesNotChangeSelectionMarker(t *testing.T) {
 	if len(m.selected) != 0 || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "downloads" {
 		t.Fatalf("返回剪贴板来源目录后状态错误: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
 	}
-	if line := m.renderList(51, 10)[1]; strings.Contains(line, "48;2;") {
+	if line := ansi.Strip(m.renderList(51, 10)[1]); strings.Contains(line, "") {
 		t.Fatalf("剪贴板状态仍显示在列表中: %q", line)
 	}
 }
@@ -376,8 +415,8 @@ func TestFileTransferClipboardSelectsCurrentEntryByDefault(t *testing.T) {
 	if _, ok := m.selected["downloads"]; !ok || len(m.clipboard.entries) != 1 || m.clipboard.entries[0].name != "downloads" {
 		t.Fatalf("无多选时未选中当前项: selected=%v", m.selected)
 	}
-	if !strings.Contains(m.renderList(51, 10)[1], "48;2;") {
-		t.Fatal("无多选时未显示当前项背景标记")
+	if line := ansi.Strip(m.renderList(51, 10)[1]); !strings.HasPrefix(line, "> ") || !strings.HasSuffix(line, "") {
+		t.Fatal("无多选时未显示当前项胶囊背景")
 	}
 }
 
@@ -853,8 +892,14 @@ func TestLocalCopyUsesConflictNames(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(targetDir, "data_1", "nested.txt")); err != nil {
 		t.Fatalf("冲突目录未整体改名复制: %v", err)
 	}
-	if len(m.selected) != 0 || len(m.clipboard.entries) != 0 {
-		t.Fatalf("粘贴完成后选择或剪贴板状态错误: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
+	focused, ok := m.currentEntry()
+	if !ok || focused.name != "report_2.txt" || len(m.selected) != 2 || len(m.clipboard.entries) != 0 {
+		t.Fatalf("粘贴完成后焦点、选择或剪贴板状态错误: focused=%#v selected=%v clipboard=%v", focused, m.selected, m.clipboard.entries)
+	}
+	for _, name := range []string{"data_1", "report_2.txt"} {
+		if _, ok := m.selected[name]; !ok {
+			t.Fatalf("本地粘贴目标 %q 未选中: %v", name, m.selected)
+		}
 	}
 }
 
@@ -867,8 +912,8 @@ func TestRenameAfterPasteKeepsClipboardSeparateFromDeleteSelection(t *testing.T)
 	m.copySelection()
 	updated, cmd := m.Update(tea.KeyPressMsg(tea.Key{Text: "p"}))
 	m = finishTransferTask(t, updated.(transferModel), cmd)
-	if len(m.selected) != 0 || len(m.clipboard.entries) != 0 {
-		t.Fatalf("粘贴后未清空剪贴板或污染多选: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
+	if _, selected := m.selected["temp_1"]; !selected || len(m.selected) != 1 || len(m.clipboard.entries) != 0 {
+		t.Fatalf("粘贴后未选中目标或清空剪贴板: selected=%v clipboard=%v", m.selected, m.clipboard.entries)
 	}
 	m.focusEntry("temp_1")
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Text: "r"}))

@@ -24,12 +24,13 @@ type sftpReadyMsg struct {
 
 // remoteDirMsg 携带一次远程目录读取结果。
 type remoteDirMsg struct {
-	client  *ssh.SFTP
-	path    string
-	focus   string
-	address bool
-	entries []transferEntry
-	err     error
+	client   *ssh.SFTP
+	path     string
+	focus    string
+	selected []string
+	address  bool
+	entries  []transferEntry
+	err      error
 }
 
 // transferTask 保存单个后台文件任务的取消函数和进度消息通道。
@@ -42,6 +43,7 @@ type transferTask struct {
 	renameOld      string
 	renameNew      string
 	focus          string
+	targets        []string
 }
 
 // localOp 描述一批本地复制或删除任务。
@@ -195,6 +197,7 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 		if m.location == remoteSide {
 			m.resetSelection()
 			m.syncAddress()
+			m.selectEntries(msg.selected)
 			if msg.focus != "" {
 				m.focusEntry(msg.focus)
 			}
@@ -210,7 +213,7 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 	}
 }
 
-func (m *transferModel) loadRemoteDir(target, focus string, address bool) tea.Cmd {
+func (m *transferModel) loadRemoteDir(target, focus string, address bool, selected ...string) tea.Cmd {
 	if m.sftp == nil {
 		m.status = "远程连接不可用"
 		return nil
@@ -239,7 +242,7 @@ func (m *transferModel) loadRemoteDir(target, focus string, address bool) tea.Cm
 		if err == nil {
 			err = ctx.Err()
 		}
-		return remoteDirMsg{client: client, path: resolved, focus: focus, address: address, entries: entriesFromRemote(infos), err: err}
+		return remoteDirMsg{client: client, path: resolved, focus: focus, selected: selected, address: address, entries: entriesFromRemote(infos), err: err}
 	}
 }
 
@@ -617,6 +620,7 @@ func runRemotePaste(ctx context.Context, task *transferTask, client *ssh.SFTP, s
 		err = nameErr
 		return
 	}
+	task.targets = names
 	var processed int64
 	var total int64
 	for _, entry := range entries {
@@ -742,12 +746,15 @@ func (m transferModel) handleTask(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 		var refreshCmd tea.Cmd
 		if msg.task.remote {
 			if m.location == remoteSide {
-				refreshCmd = m.loadRemoteDir(m.remotePath, msg.task.focus, false)
+				refreshCmd = m.loadRemoteDir(m.remotePath, msg.task.focus, false, msg.task.targets...)
 			} else {
 				refreshErr = m.refreshLocal()
 			}
 		} else {
 			refreshErr = m.refreshLocal()
+		}
+		if refreshCmd == nil && refreshErr == nil && !msg.cancelled && msg.err == nil {
+			m.selectEntries(msg.task.targets)
 		}
 		if refreshErr != nil {
 			m.status = resultStatus + "，但刷新失败：" + refreshErr.Error()
@@ -802,6 +809,7 @@ func runLocalTask(ctx context.Context, task *transferTask, operation localOp) {
 			if err != nil {
 				return err
 			}
+			task.targets = planned
 		}
 		processed := int64(0)
 		// ponytail: 规划后若目标被并发占用则由排他创建安全失败；确有并发写入时再增加重试。

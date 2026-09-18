@@ -415,6 +415,16 @@ func (m *transferModel) resetSelection() {
 	m.cursor = 0
 }
 
+// selectEntries 选中指定项目，并将焦点移到最后一项。
+func (m *transferModel) selectEntries(names []string) {
+	for _, name := range names {
+		m.selected[name] = struct{}{}
+	}
+	if len(names) > 0 {
+		m.focusEntry(names[len(names)-1])
+	}
+}
+
 func (m transferModel) atClipboardSource() bool {
 	if len(m.clipboard.entries) == 0 || m.clipboard.source != m.location {
 		return false

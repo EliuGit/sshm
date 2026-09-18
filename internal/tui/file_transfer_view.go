@@ -1,23 +1,56 @@
 package tui
 
 import (
+	"path/filepath"
 	"strings"
 
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 )
 
 var (
-	localTagColor      = lipgloss.Color("#1473E6")
-	remoteTagColor     = lipgloss.Color("#e06c75")
-	localTagStyle      = lipgloss.NewStyle().Background(localTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
-	remoteTagStyle     = lipgloss.NewStyle().Background(remoteTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
-	folderStyle        = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
-	fileStyle          = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
-	selectedMarkStyle  = lipgloss.NewStyle().Background(lipgloss.Color("#eeb64e")).Foreground(lipgloss.Color("#4e9af1"))
-	transferFrameStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#Fefefe"))
+	localTagColor       = lipgloss.Color("#1473E6")
+	remoteTagColor      = lipgloss.Color("#e06c75")
+	localTagStyle       = lipgloss.NewStyle().Background(localTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
+	remoteTagStyle      = lipgloss.NewStyle().Background(remoteTagColor).Foreground(lipgloss.Color("#FFFFFF")).Padding(0, 1)
+	folderStyle         = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
+	fileStyle           = lipgloss.NewStyle().Foreground(lipgloss.Color("#61AFEF"))
+	transferSelectColor = lipgloss.Color("#41454C")
+	transferFrameStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("#Fefefe"))
 )
 
 var transferBorder = lipgloss.RoundedBorder()
+
+// 使用 Nerd Font 单格图标，避免 Emoji 在 tmux 与本地终端中的宽度差异造成边框偏移。
+const (
+	transferSearchIcon = "\ue68f"
+	transferFolderIcon = "\uf07b"
+	transferFileIcon   = "\uf15b"
+)
+
+type transferIconSpec struct {
+	glyph string
+	color string
+}
+
+// 常见扩展名沿用  Nerd Font 图标和配色，未匹配时回退到通用文件图标。
+var transferExtensionIcons = map[string]transferIconSpec{
+	"go": {"\ue627", "#6ed8e5"}, "js": {"\ue781", "#f39c12"}, "mjs": {"\ue781", "#f39c12"},
+	"ts": {"\U000f06e6", "#2980b9"}, "py": {"\ue606", "#3498db"}, "rs": {"\ue7a8", "#f39c12"},
+	"java": {"\ue738", "#e67e22"}, "c": {"\ue649", "#0188d2"}, "cpp": {"\ue646", "#0188d2"},
+	"h": {"\uf0fd", "#3498db"}, "html": {"\uf13b", "#e67e22"}, "css": {"\uf13c", "#2d53e5"},
+	"json": {"\ue60b", "#f1c40f"}, "yaml": {"\ue601", "#f39c12"}, "yml": {"\ue601", "#f39c12"},
+	"toml": {"\U000f016a", "#f39c12"}, "md": {"\uf48a", "#7f8c8d"}, "txt": {"\uf15c", "#7f8c8d"},
+	"pdf": {"\uf1c1", "#d35400"}, "env": {"\uf462", "#eed645"}, "sql": {"\uf1c0", "#ff8400"},
+	"log": {"\uf18d", "#7f8c8d"}, "sh": {"\uf489", "#2ecc71"}, "bash": {"\uf489", "#2ecc71"},
+	"zsh": {"\uf489", "#2ecc71"}, "png": {"\uf1c5", "#e74c3c"}, "jpg": {"\uf1c5", "#e74c3c"},
+	"jpeg": {"\uf1c5", "#e74c3c"}, "gif": {"\uf1c5", "#e74c3c"}, "svg": {"\uf1c5", "#e74c3c"},
+	"webp": {"\uf1c5", "#e74c3c"}, "mp3": {"\uf001", "#ee524f"}, "wav": {"\uf001", "#ee524f"},
+	"flac": {"\uf001", "#ee524f"}, "mp4": {"\uf03d", "#c0392b"}, "mkv": {"\uf03d", "#c0392b"},
+	"avi": {"\uf03d", "#c0392b"}, "zip": {"\uf410", "#e74c3c"}, "tar": {"\uf410", "#e74c3c"},
+	"gz": {"\uf410", "#e74c3c"}, "bz2": {"\uf410", "#e74c3c"}, "7z": {"\uf410", "#e74c3c"},
+	"rar": {"\uf410", "#e74c3c"},
+}
 
 // View 绘制中等尺寸的文件传输弹窗及其内部覆盖层。
 func (m transferModel) View() string {
@@ -94,9 +127,11 @@ func (m transferModel) renderList(width, height int) []string {
 	if m.focus == searchFocus {
 		marker = accentStyle.Render("> ")
 	}
-	rows[0] = fit(marker+accentStyle.Render("🔍")+" "+search.View(), width)
+	rows[0] = fit(marker+accentStyle.Render(transferSearchIcon)+" "+search.View(), width)
 
 	entries := m.visibleEntries()
+	selectionStyle := lipgloss.NewStyle().Background(transferSelectColor)
+	selectionEdgeStyle := lipgloss.NewStyle().Foreground(transferSelectColor).Background(backgroundColor)
 	capacity := max(0, height-1)
 	start := 0
 	if capacity > 0 && m.cursor >= capacity {
@@ -105,24 +140,32 @@ func (m transferModel) renderList(width, height int) []string {
 	for row := 0; row < capacity && start+row < len(entries); row++ {
 		index, entry := start+row, entries[start+row]
 		focused := index == m.cursor && m.focus == listFocus
-		cursor := "  "
+		cursor := " "
 		if focused {
-			cursor = accentStyle.Render(">") + " "
+			cursor = accentStyle.Render(">")
 		}
 		_, selected := m.selected[entry.name]
-		if selected {
-			marker := " "
-			if focused {
-				marker = ">"
-			}
-			cursor = selectedMarkStyle.Render(marker) + " "
-		}
-		icon := renderTransferEntryIcon(entry)
+		iconGlyph, iconStyle := transferEntryIcon(entry)
+		icon := iconStyle.Render(iconGlyph)
 		name := entry.name
 		if focused {
 			name = accentStyle.Render(name)
 		}
-		rows[row+1] = fit(cursor+icon+" "+name, width)
+		line := fit(" "+cursor+" "+icon+" "+name, width)
+		if selected {
+			nameWidth := max(0, width-6)
+			name = ansi.Truncate(entry.name, nameWidth, "")
+			cursorStyle, nameStyle := selectionStyle, selectionStyle
+			if focused {
+				cursorStyle = accentStyle.Background(transferSelectColor)
+				nameStyle = accentStyle.Background(transferSelectColor)
+			}
+			padding := strings.Repeat(" ", max(0, nameWidth-ansi.StringWidth(name)))
+			line = selectionEdgeStyle.Render("") + cursorStyle.Render(ansi.Strip(cursor)) + selectionStyle.Render(" ") +
+				iconStyle.Background(transferSelectColor).Render(iconGlyph) + selectionStyle.Render(" ") +
+				nameStyle.Render(name) + selectionStyle.Render(padding) + selectionEdgeStyle.Render("")
+		}
+		rows[row+1] = line
 	}
 	return rows
 }
@@ -158,10 +201,19 @@ func (m transferModel) renderDetails(width, height int) []string {
 }
 
 func renderTransferEntryIcon(entry transferEntry) string {
+	glyph, style := transferEntryIcon(entry)
+	return style.Render(glyph)
+}
+
+func transferEntryIcon(entry transferEntry) (string, lipgloss.Style) {
 	if entry.dir {
-		return folderStyle.Render("📁")
+		return transferFolderIcon, folderStyle
 	}
-	return fileStyle.Render("📄")
+	ext := strings.TrimPrefix(filepath.Ext(strings.ToLower(entry.name)), ".")
+	if icon, ok := transferExtensionIcons[ext]; ok {
+		return icon.glyph, lipgloss.NewStyle().Foreground(lipgloss.Color(icon.color))
+	}
+	return transferFileIcon, fileStyle
 }
 
 func (m transferModel) sortLabel() string {
