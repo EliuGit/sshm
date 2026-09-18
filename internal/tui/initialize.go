@@ -165,7 +165,7 @@ func (m applicationModel) View() tea.View {
 
 func newInitializeModel(path string, mode initializeMode) initializeModel {
 	m := initializeModel{path: path, mode: mode}
-	m.password = newFormInput("应用密码", 16)
+	m.password = newFormInput("应用密码", passwordCharLimit)
 	if mode == initializeUnlock {
 		m.password.Placeholder = ""
 	}
@@ -173,7 +173,7 @@ func newInitializeModel(path string, mode initializeMode) initializeModel {
 	m.password.EchoCharacter = '•'
 	m.password.Focus()
 	if mode == initializeNew {
-		m.repeat = newFormInput("再次输入密码", 16)
+		m.repeat = newFormInput("再次输入密码", passwordCharLimit)
 		m.repeat.EchoMode = textinput.EchoPassword
 		m.repeat.EchoCharacter = '•'
 	}

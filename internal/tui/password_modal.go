@@ -40,7 +40,7 @@ func newPasswordForm(changePassword func([]byte, []byte) error) passwordFormMode
 	m := passwordFormModel{changePassword: changePassword}
 	placeholders := [...]string{"当前应用密码", "新的应用密码", "再次输入新密码"}
 	for i := range m.inputs {
-		m.inputs[i] = newFormInput(placeholders[i], 0)
+		m.inputs[i] = newFormInput(placeholders[i], passwordCharLimit)
 		m.inputs[i].EchoMode = textinput.EchoPassword
 		m.inputs[i].EchoCharacter = '•'
 	}

@@ -11,6 +11,8 @@ import (
 	"sshm/internal/repository"
 )
 
+const passwordCharLimit = 48
+
 const (
 	connectionNameField = iota
 	hostField

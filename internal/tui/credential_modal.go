@@ -270,7 +270,7 @@ type credentialFormModel struct {
 func newCredentialForm(manager credentialPickerModel, credential *repository.Credential) credentialFormModel {
 	credentialType := "passwd"
 	name := newFormInput("用于识别和复用", 24)
-	password := newFormInput("SSH 登录密码", 20)
+	password := newFormInput("SSH 登录密码", passwordCharLimit)
 	privateKey := newKeyInput()
 	if credential != nil {
 		credentialType = credential.Type
