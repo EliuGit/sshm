@@ -14,10 +14,10 @@ var modalStyle = lipgloss.NewStyle().
 	Width(54).
 	Padding(0, 1).
 	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("#4e9af1ff")).
+	BorderForeground(modalBorderColor).
 	Foreground(textColor)
 
-var confirmStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#E5C07B"))
+var confirmStyle = lipgloss.NewStyle().Foreground(warningColor)
 var modalTitleStyle = accentStyle.Bold(false)
 
 // modalModel 定义可覆盖在主界面上的单层模态窗口。

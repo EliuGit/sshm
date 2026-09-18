@@ -23,15 +23,12 @@ const (
 var windowTitle = "SSHM " + buildinfo.Version
 
 var (
-	backgroundColor = lipgloss.Color("#282C34")
-	textColor       = lipgloss.Color("#D8DEE9")
-	selectedColor   = lipgloss.Color("#007ea1")
-	accentStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#00b3e4")).Bold(true)
-	mutedStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#6B6F78"))
-	borderStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#5C6068"))
-	labelStyle      = lipgloss.NewStyle().Foreground(lipgloss.Color("#8d8e92"))
-	selectedStyle   = lipgloss.NewStyle().Background(selectedColor).Foreground(lipgloss.Color("#FFFFFF"))
-	plainStyle      = lipgloss.NewStyle().Foreground(textColor)
+	accentStyle   = lipgloss.NewStyle().Foreground(accentColor).Bold(true)
+	mutedStyle    = lipgloss.NewStyle().Foreground(mutedTextColor)
+	borderStyle   = lipgloss.NewStyle().Foreground(borderColor)
+	labelStyle    = lipgloss.NewStyle().Foreground(labelColor)
+	selectedStyle = lipgloss.NewStyle().Background(selectedColor).Foreground(selectedTextColor)
+	plainStyle    = lipgloss.NewStyle().Foreground(textColor)
 )
 
 func newSearchInput() textinput.Model {
@@ -44,7 +41,7 @@ func newSearchInput() textinput.Model {
 	styles.Focused.Placeholder = mutedStyle
 	styles.Blurred.Text = plainStyle
 	styles.Blurred.Placeholder = mutedStyle
-	styles.Cursor.Color = lipgloss.Color("#7F6DF2")
+	styles.Cursor.Color = accentColor
 	input.SetStyles(styles)
 	return input
 }

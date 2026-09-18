@@ -110,7 +110,7 @@ func (m menuModel) View() string {
 		}
 		lines = append(lines, line)
 	}
-	return lipgloss.NewStyle().Width(menuWidth).Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("#4e9af1ff")).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
+	return lipgloss.NewStyle().Width(menuWidth).Border(lipgloss.RoundedBorder()).BorderForeground(modalBorderColor).Render(lipgloss.JoinVertical(lipgloss.Left, lines...))
 }
 
 // menuPosition 返回连接列表左边缘及当前可见选中行的下一行。

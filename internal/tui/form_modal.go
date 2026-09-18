@@ -28,10 +28,9 @@ var (
 	formActiveLabel    = accentStyle.Width(6).Bold(false)
 	formInputStyle     = lipgloss.NewStyle().Width(42).Padding(0, 1)
 	formInputFocused   = formInputStyle.Foreground(textColor)
-	formSectionStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("#9AA1AE"))
-	formChoiceStyle    = lipgloss.NewStyle().Padding(0, 1).Foreground(lipgloss.Color("#9AA1AE"))
-	formChoiceSelected = formChoiceStyle.Foreground(lipgloss.Color("#B5A7FF")).Bold(true).Underline(true)
-	formErrorStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("#FF6B6B"))
+	formChoiceStyle    = lipgloss.NewStyle().Padding(0, 1).Foreground(mutedTextColor)
+	formChoiceSelected = formChoiceStyle.Foreground(accentColor).Bold(true).Underline(true)
+	formErrorStyle     = lipgloss.NewStyle().Foreground(errorColor)
 )
 
 // connectionCreatedMsg 通知主界面新增连接已经持久化。
@@ -100,7 +99,7 @@ func newFormInput(placeholder string, limit int) textinput.Model {
 	styles.Focused.Placeholder = mutedStyle
 	styles.Blurred.Text = plainStyle
 	styles.Blurred.Placeholder = mutedStyle
-	styles.Cursor.Color = lipgloss.Color("#e7e7e7")
+	styles.Cursor.Color = accentColor
 	input.SetStyles(styles)
 	return input
 }

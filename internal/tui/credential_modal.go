@@ -304,7 +304,7 @@ func newKeyInput() textarea.Model {
 	styles.Blurred.Text = plainStyle
 	styles.Blurred.Placeholder = mutedStyle
 	styles.Blurred.CursorLine = lipgloss.NewStyle()
-	styles.Cursor.Color = lipgloss.Color("#e7e7e7")
+	styles.Cursor.Color = accentColor
 	input.SetStyles(styles)
 	return input
 }
