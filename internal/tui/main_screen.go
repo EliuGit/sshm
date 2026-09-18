@@ -47,7 +47,7 @@ func (model) Init() tea.Cmd { return nil }
 // Update 消费终端事件，并返回更新后的状态和后续命令。
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		m.width, m.height = size.Width, size.Height
+		m.width, m.height = min(size.Width, maxViewWidth), size.Height
 	}
 	if connected, ok := msg.(sftpReadyMsg); ok {
 		if _, active := m.modal.(transferModel); !active {

@@ -14,6 +14,7 @@ import (
 
 const (
 	minWidth        = 80
+	maxViewWidth    = 120
 	minHeight       = 20
 	nameColumnWidth = 24
 	userColumnWidth = 16

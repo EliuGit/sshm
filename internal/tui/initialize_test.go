@@ -60,6 +60,14 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	}
 }
 
+func TestViewWidthIsLimited(t *testing.T) {
+	main, _ := (model{}).Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	initial, _ := newInitializeModel("", initializeNew).Update(tea.WindowSizeMsg{Width: 200, Height: 30})
+	if main.(model).width != maxViewWidth || initial.(initializeModel).width != maxViewWidth {
+		t.Fatal("主界面和初始化界面宽度未限制为 120 列")
+	}
+}
+
 func TestBubbleTeaEnvironmentQueriesSynchronizedOutputOverSSH(t *testing.T) {
 	remote := bubbleTeaEnvironment([]string{"TERM=xterm-256color", "SSH_TTY=/dev/pts/0"})
 	if remote[len(remote)-1] != "WT_SESSION=sshm" {
