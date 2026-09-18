@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"sshm/internal/repository"
@@ -74,6 +75,10 @@ func TestConnectionTableColumns(t *testing.T) {
 	}
 	if got := ansi.StringWidth(selected); got != width {
 		t.Fatalf("胶囊选中行宽度 = %d, want %d", got, width)
+	}
+	opaqueEdge := lipgloss.NewStyle().Foreground(selectedColor).Background(backgroundColor).Render("")
+	if strings.Contains(selected, opaqueEdge) {
+		t.Fatal("选中行圆角边缘不应设置不透明背景色")
 	}
 }
 

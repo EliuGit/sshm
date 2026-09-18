@@ -128,7 +128,7 @@ func (m transferModel) renderList(width, height int) []string {
 
 	entries := m.visibleEntries()
 	selectionStyle := lipgloss.NewStyle().Background(multiSelectedColor)
-	selectionEdgeStyle := lipgloss.NewStyle().Foreground(multiSelectedColor).Background(backgroundColor)
+	selectionEdgeStyle := lipgloss.NewStyle().Foreground(multiSelectedColor)
 	capacity := max(0, height-1)
 	start := 0
 	if capacity > 0 && m.cursor >= capacity {

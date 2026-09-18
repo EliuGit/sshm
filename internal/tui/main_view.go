@@ -16,6 +16,7 @@ const (
 	minWidth        = 80
 	maxViewWidth    = 120
 	minHeight       = 20
+	maxViewHeight   = 35
 	nameColumnWidth = 24
 	userColumnWidth = 16
 )
@@ -28,6 +29,7 @@ var (
 	borderStyle   = lipgloss.NewStyle().Foreground(borderColor)
 	labelStyle    = lipgloss.NewStyle().Foreground(labelColor)
 	selectedStyle = lipgloss.NewStyle().Background(selectedColor).Foreground(selectedTextColor)
+	selectedEdge  = lipgloss.NewStyle().Foreground(selectedColor)
 	plainStyle    = lipgloss.NewStyle().Foreground(textColor)
 )
 
@@ -177,8 +179,7 @@ func newConnectionTable(width, height, selected int, focused bool, connections [
 		styles.Selected = selectedStyle.
 			Transform(func(row string) string { return ansi.Cut(row, 1, width-1) }).
 			Border(lipgloss.Border{Left: "", Right: ""}, false, true, false, true).
-			BorderForeground(selectedColor).
-			BorderBackground(backgroundColor).
+			BorderForeground(selectedEdge.GetForeground()).
 			MaxWidth(width)
 	}
 	t := table.New(

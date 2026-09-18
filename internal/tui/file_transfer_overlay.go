@@ -276,7 +276,7 @@ func (m transferModel) renderProgress() string {
 		statusStyle = formErrorStyle
 		titleStyle = formErrorStyle
 	}
-	if m.overlay.cancelRequested && m.overlay.progress == progressRunning {
+	if m.overlay.cancelRequested && (m.overlay.progress == progressConnecting || m.overlay.progress == progressRunning) {
 		footer = "正在取消…"
 	}
 

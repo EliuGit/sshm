@@ -147,23 +147,19 @@ func (m transferModel) handleRemote(msg tea.Msg) (modalModel, tea.Cmd, bool) {
 		}
 		m.cancelConnect()
 		m.cancelConnect = nil
-		if m.overlay.cancelRequested {
+		if m.overlay.cancelRequested || errors.Is(msg.err, context.Canceled) {
 			if msg.client != nil {
 				_ = msg.client.Close()
 			}
-			m.overlay.progress = progressCancelled
+			m.overlay = transferOverlay{}
+			_ = m.switchLocation(localSide)
 			m.status = "远程连接已取消"
 			return m, nil, true
 		}
 		if msg.err != nil {
-			if errors.Is(msg.err, context.Canceled) {
-				m.overlay.progress = progressCancelled
-				m.status = "远程连接已取消"
-			} else {
-				m.overlay.progress = progressFailed
-				m.overlay.error = msg.err.Error()
-				m.status = "远程连接失败"
-			}
+			m.overlay.progress = progressFailed
+			m.overlay.error = msg.err.Error()
+			m.status = "远程连接失败"
 			return m, nil, true
 		}
 		m.sftp = msg.client

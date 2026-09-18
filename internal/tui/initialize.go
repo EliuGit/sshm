@@ -185,7 +185,7 @@ func (m initializeModel) Init() tea.Cmd { return nil }
 // Update 处理初始化、解锁的输入和异步结果。
 func (m initializeModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if size, ok := msg.(tea.WindowSizeMsg); ok {
-		m.width, m.height = min(size.Width, maxViewWidth), size.Height
+		m.width, m.height = min(size.Width, maxViewWidth), min(size.Height, maxViewHeight)
 	}
 	if result, ok := msg.(initializeResultMsg); ok {
 		m.saving = false

@@ -103,6 +103,7 @@ func TestFileTransferAppliesRemoteDirectoryResult(t *testing.T) {
 
 func TestFileTransferCancelsRemoteConnection(t *testing.T) {
 	m := newTestTransfer(t, connectionRow{})
+	m.location = remoteSide
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancelConnect = cancel
 	m.overlay = transferOverlay{kind: overlayProgress, progress: progressConnecting}
@@ -111,10 +112,13 @@ func TestFileTransferCancelsRemoteConnection(t *testing.T) {
 	if !m.overlay.cancelRequested || ctx.Err() != context.Canceled {
 		t.Fatalf("远程连接取消未生效: requested=%v err=%v", m.overlay.cancelRequested, ctx.Err())
 	}
+	if view := ansi.Strip(m.renderOverlay()); !strings.Contains(view, "正在取消…") {
+		t.Fatalf("远程连接取消中未显示等待状态: %q", view)
+	}
 	updated, _ = m.Update(sftpReadyMsg{err: context.Canceled})
 	m = updated.(transferModel)
-	if m.overlay.progress != progressCancelled || m.cancelConnect != nil {
-		t.Fatalf("远程连接取消结果错误: progress=%d cancel=%v", m.overlay.progress, m.cancelConnect)
+	if m.overlay.kind != overlayNone || m.cancelConnect != nil || m.location != localSide || m.status != "远程连接已取消" {
+		t.Fatalf("远程连接取消结果错误: overlay=%d cancel=%v location=%d status=%q", m.overlay.kind, m.cancelConnect, m.location, m.status)
 	}
 }
 
@@ -374,6 +378,10 @@ func TestFileTransferSeparatorsAndSelectionBackground(t *testing.T) {
 	}
 	if !strings.Contains(list[1], "38;2;229;192;123") || !strings.Contains(list[1], "38;2;0;179;228") {
 		t.Fatalf("多选背景改变了图标或焦点前景色: %q", list[1])
+	}
+	opaqueEdge := lipgloss.NewStyle().Foreground(multiSelectedColor).Background(backgroundColor).Render("")
+	if strings.Contains(list[1], opaqueEdge) {
+		t.Fatal("多选行圆角边缘不应设置不透明背景色")
 	}
 	selected, unselected := ansi.Strip(list[1]), ansi.Strip(list[2])
 	if !strings.HasPrefix(selected, "> "+transferFolderIcon) || !strings.HasSuffix(selected, "") || !strings.HasPrefix(unselected, "   "+transferFolderIcon) {

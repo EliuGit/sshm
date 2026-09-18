@@ -60,11 +60,14 @@ func TestApplicationModelSwitchesToMainWithoutQuitting(t *testing.T) {
 	}
 }
 
-func TestViewWidthIsLimited(t *testing.T) {
-	main, _ := (model{}).Update(tea.WindowSizeMsg{Width: 200, Height: 30})
-	initial, _ := newInitializeModel("", initializeNew).Update(tea.WindowSizeMsg{Width: 200, Height: 30})
-	if main.(model).width != maxViewWidth || initial.(initializeModel).width != maxViewWidth {
-		t.Fatal("主界面和初始化界面宽度未限制为 120 列")
+func TestViewSizeIsLimited(t *testing.T) {
+	main, _ := (model{}).Update(tea.WindowSizeMsg{Width: 200, Height: 60})
+	initial, _ := newInitializeModel("", initializeNew).Update(tea.WindowSizeMsg{Width: 200, Height: 60})
+	if main := main.(model); main.width != maxViewWidth || main.height != maxViewHeight {
+		t.Fatalf("主界面尺寸 = %dx%d，want %dx%d", main.width, main.height, maxViewWidth, maxViewHeight)
+	}
+	if initial := initial.(initializeModel); initial.width != maxViewWidth || initial.height != maxViewHeight {
+		t.Fatalf("初始化界面尺寸 = %dx%d，want %dx%d", initial.width, initial.height, maxViewWidth, maxViewHeight)
 	}
 }
 
