@@ -41,9 +41,27 @@ func TestRenderPanelSizeAndSections(t *testing.T) {
 	if !strings.Contains(lines[height-2], "a 新增") {
 		t.Fatal("底部快捷键行后仍有空行")
 	}
-	compact := ansi.Strip(renderPanelWithConnections(minWidth, height, 0, false, newSearchInput(), nil, 0, true))
+	compact := ansi.Strip(renderPanelWithConnections(80, height, 0, false, newSearchInput(), nil, 0, true))
 	if !strings.Contains(compact, "Ctrl+P 修改密码 | q 退出") {
-		t.Fatalf("最小窗口宽度下快捷键提示被截断: %q", compact)
+		t.Fatalf("80 列窗口下快捷键提示被截断: %q", compact)
+	}
+}
+
+func TestRenderSupportsSmallWindows(t *testing.T) {
+	if view := (model{}).render(); view != "" {
+		t.Fatalf("未收到窗口尺寸时仍输出内容: %q", view)
+	}
+	for _, size := range [][2]int{{1, 1}, {20, 5}, {67, 6}, {79, 19}} {
+		width, height := size[0], size[1]
+		lines := strings.Split((model{width: width, height: height}).render(), "\n")
+		if len(lines) != height {
+			t.Fatalf("%d×%d 窗口行数 = %d", width, height, len(lines))
+		}
+		for i, line := range lines {
+			if got := ansi.StringWidth(line); got != width {
+				t.Fatalf("%d×%d 窗口第 %d 行宽度 = %d", width, height, i+1, got)
+			}
+		}
 	}
 }
 

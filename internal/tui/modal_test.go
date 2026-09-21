@@ -331,8 +331,8 @@ func TestConnectionFormAcceptsMultilinePrivateKey(t *testing.T) {
 	form.credentialType = "key"
 	form.name.SetValue("部署私钥")
 	form.privateKey.SetValue("-----BEGIN OPENSSH PRIVATE KEY-----\nline 2\n-----END OPENSSH PRIVATE KEY-----")
-	if lines := strings.Count(form.View(), "\n") + 1; lines > minHeight {
-		t.Fatalf("私钥表单高度 = %d, 超过最小终端高度 %d", lines, minHeight)
+	if lines := strings.Count(form.View(), "\n") + 1; lines > 20 {
+		t.Fatalf("私钥表单高度 = %d, 超过 20 行", lines)
 	}
 	updated, cmd := form.Update(tea.KeyPressMsg(tea.Key{Code: 's', Mod: tea.ModCtrl}))
 	form = updated.(credentialFormModel)

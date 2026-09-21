@@ -13,10 +13,10 @@ import (
 )
 
 const (
-	minWidth        = 80
 	maxViewWidth    = 120
-	minHeight       = 20
 	maxViewHeight   = 35
+	minLayoutWidth  = 68
+	minLayoutHeight = 7
 	nameColumnWidth = 24
 	userColumnWidth = 16
 )
@@ -59,9 +59,6 @@ func (m model) View() tea.View {
 }
 
 func (m model) render() string {
-	if m.width < minWidth || m.height < minHeight {
-		return "终端窗口过小，请至少调整为 80×20"
-	}
 	input := m.searchInput
 	if !m.searchReady {
 		input = newSearchInput()
@@ -79,6 +76,8 @@ func (m model) render() string {
 
 // renderPanelWithConnections 绘制连接列表及详情，并使用已过滤、排序后的数据保持两侧选中项一致。
 func renderPanelWithConnections(width, height, selected int, searchFocused bool, searchInput textinput.Model, connections []connectionRow, sortField byte, sortAsc bool) string {
+	viewportWidth, viewportHeight := max(0, width), max(0, height)
+	width, height = max(minLayoutWidth, viewportWidth), max(minLayoutHeight, viewportHeight)
 	innerWidth, innerHeight := width-2, height-2
 	rows := make([]string, innerHeight)
 	for i := range rows {
@@ -157,6 +156,10 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 		result = append(result, borderStyle.Render("│")+row+borderStyle.Render("│"))
 	}
 	result = append(result, borderStyle.Render("╰"+strings.Repeat("─", innerWidth)+"╯"))
+	result = result[:min(len(result), viewportHeight)]
+	for i := range result {
+		result[i] = fit(result[i], viewportWidth)
+	}
 	return strings.Join(result, "\n")
 }
 
