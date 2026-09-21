@@ -17,6 +17,7 @@ const (
 	maxViewHeight   = 35
 	minLayoutWidth  = 68
 	minLayoutHeight = 7
+	minDetailWidth  = 35
 	nameColumnWidth = 24
 	userColumnWidth = 16
 )
@@ -99,7 +100,8 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 	mainStart := 3
 	footerLine := innerHeight - 2
 	leftWidth := contentWidth * 2 / 3
-	rightWidth := contentWidth - leftWidth - 3
+	rightWidth := max(minDetailWidth, contentWidth-leftWidth-3)
+	leftWidth = contentWidth - rightWidth - 3
 	mainRow := func(left, right string) string {
 		return fit(left, leftWidth) + " " + borderStyle.Render("│") + " " + fit(right, rightWidth)
 	}
@@ -112,7 +114,7 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 		start := selected - visibleRows + 1
 		tableConnections, tableSelected = connections[start:], visibleRows-1
 	}
-	connectionTable := newConnectionTable(leftWidth, visibleRows+1, tableSelected, !searchFocused, tableConnections, sortField, sortAsc)
+	connectionTable := newConnectionTable(leftWidth, visibleRows+1, tableSelected, !searchFocused, viewportWidth >= 80, tableConnections, sortField, sortAsc)
 	tableLines := strings.Split(connectionTable.View(), "\n")
 	leftRows[mainStart] = tableLines[0]
 	rightRows[mainStart] = labelStyle.Render("详情")
@@ -163,10 +165,21 @@ func renderPanelWithConnections(width, height, selected int, searchFocused bool,
 	return strings.Join(result, "\n")
 }
 
-func newConnectionTable(width, height, selected int, focused bool, connections []connectionRow, sortField byte, sortAsc bool) table.Model {
+func newConnectionTable(width, height, selected int, focused, showDetails bool, connections []connectionRow, sortField byte, sortAsc bool) table.Model {
+	nameWidth, userWidth := min(nameColumnWidth, width), userColumnWidth
+	hostWidth := width - nameWidth - userWidth
+	if showDetails && hostWidth < 1 {
+		nameWidth = max(1, width/2)
+		userWidth = max(1, (width-nameWidth)/3)
+		hostWidth = max(1, width-nameWidth-userWidth)
+	}
 	rows := make([]table.Row, 0, len(connections))
 	for _, connection := range connections {
-		rows = append(rows, table.Row{fitEllipsis(" "+connection.name, nameColumnWidth), connection.host + ":" + connection.port, connection.username})
+		row := table.Row{fitEllipsis(" "+connection.name, nameWidth)}
+		if showDetails {
+			row = append(row, connection.host+":"+connection.port, connection.username)
+		}
+		rows = append(rows, row)
 	}
 	header := plainStyle
 	if focused {
@@ -185,12 +198,15 @@ func newConnectionTable(width, height, selected int, focused bool, connections [
 			BorderForeground(selectedEdge.GetForeground()).
 			MaxWidth(width)
 	}
+	columns := []table.Column{{Title: sortTitle(" 名称", 'n', sortField, sortAsc), Width: nameWidth}}
+	if showDetails {
+		columns = append(columns,
+			table.Column{Title: sortTitle("主机:端口", 'h', sortField, sortAsc), Width: hostWidth},
+			table.Column{Title: sortTitle("用户", 'u', sortField, sortAsc), Width: userWidth},
+		)
+	}
 	t := table.New(
-		table.WithColumns([]table.Column{
-			{Title: sortTitle(" 名称", 'n', sortField, sortAsc), Width: nameColumnWidth},
-			{Title: sortTitle("主机:端口", 'h', sortField, sortAsc), Width: width - nameColumnWidth - userColumnWidth},
-			{Title: sortTitle("用户", 'u', sortField, sortAsc), Width: userColumnWidth},
-		}),
+		table.WithColumns(columns),
 		table.WithRows(rows),
 		table.WithWidth(width),
 		table.WithHeight(max(1, height)),

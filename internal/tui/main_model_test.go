@@ -65,6 +65,20 @@ func TestRenderSupportsSmallWindows(t *testing.T) {
 	}
 }
 
+func TestConnectionColumnsAdaptToWindowWidth(t *testing.T) {
+	compact := strings.Split(ansi.Strip(renderPanelWithConnections(79, 20, 0, false, newSearchInput(), testConnections, 0, true)), "\n")[4]
+	if strings.Contains(compact, "主机:端口") || strings.Contains(compact, "用户") {
+		t.Fatalf("79 列窗口仍显示主机或用户列: %q", compact)
+	}
+	wide := strings.Split(ansi.Strip(renderPanelWithConnections(80, 20, 0, false, newSearchInput(), testConnections, 0, true)), "\n")[4]
+	if !strings.Contains(wide, "主机:端口") || !strings.Contains(wide, "用户") {
+		t.Fatalf("80 列窗口未显示主机和用户列: %q", wide)
+	}
+	if got := newConnectionTable(34, 10, 0, true, true, testConnections, 0, true).Columns(); len(got) != 3 {
+		t.Fatalf("窄表格列数 = %d, want 3", len(got))
+	}
+}
+
 func TestClosingCredentialManagerRefreshesConnectionCredentialName(t *testing.T) {
 	m := model{connections: []connectionRow{{credID: 7, credName: "旧名称", auth: "密码"}}, modal: credentialFormModel{}}
 	updated, _ := m.Update(credentialSavedMsg{credential: repository.Credential{ID: 7, Name: "新名称", Type: "key"}})
@@ -76,7 +90,7 @@ func TestClosingCredentialManagerRefreshesConnectionCredentialName(t *testing.T)
 
 func TestConnectionTableColumns(t *testing.T) {
 	const width = 60
-	table := newConnectionTable(width, 10, 0, true, testConnections, 0, true)
+	table := newConnectionTable(width, 10, 0, true, true, testConnections, 0, true)
 	columns := table.Columns()
 	if len(columns) != 3 || columns[0].Width != nameColumnWidth || columns[2].Width != userColumnWidth {
 		t.Fatalf("列表列定义 = %#v", columns)
@@ -234,11 +248,11 @@ func TestSortUsesCountAsTieBreaker(t *testing.T) {
 }
 
 func TestSortHeaderIndicator(t *testing.T) {
-	view := ansi.Strip(newConnectionTable(60, 10, 0, true, testConnections, 'n', true).View())
+	view := ansi.Strip(newConnectionTable(60, 10, 0, true, true, testConnections, 'n', true).View())
 	if !strings.Contains(view, "名称 ↑") {
 		t.Fatalf("升序表头缺少箭头: %q", view)
 	}
-	view = ansi.Strip(newConnectionTable(60, 10, 0, true, testConnections, 'n', false).View())
+	view = ansi.Strip(newConnectionTable(60, 10, 0, true, true, testConnections, 'n', false).View())
 	if !strings.Contains(view, "名称 ↓") {
 		t.Fatalf("降序表头缺少箭头: %q", view)
 	}
