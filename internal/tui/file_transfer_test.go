@@ -609,6 +609,9 @@ func TestFileTransferRenameInput(t *testing.T) {
 	if m.overlay.kind != overlayRename || m.overlay.renameInput.Value() != "server.log" {
 		t.Fatalf("重命名框未预填当前名称: %#v", m.overlay)
 	}
+	if m.overlay.renameInput.Position() != len([]rune("server")) {
+		t.Fatalf("重命名框光标位置 = %d，want %d", m.overlay.renameInput.Position(), len([]rune("server")))
+	}
 	updated, _ = m.Update(tea.KeyPressMsg(tea.Key{Code: 'c', Mod: tea.ModCtrl}))
 	m = updated.(transferModel)
 	if m.overlay.renameInput.Value() != "" {

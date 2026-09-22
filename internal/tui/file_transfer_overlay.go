@@ -76,6 +76,9 @@ func (m *transferModel) openRename() tea.Cmd {
 	input := newTransferInput()
 	input.SetValue(entry.name)
 	input.CursorEnd()
+	if extension := filepath.Ext(entry.name); !entry.dir && extension != "" && extension != entry.name {
+		input.SetCursor(len([]rune(strings.TrimSuffix(entry.name, extension))))
+	}
 	m.overlay = transferOverlay{kind: overlayRename, renameOld: entry.name, renameInput: input}
 	return m.overlay.renameInput.Focus()
 }
